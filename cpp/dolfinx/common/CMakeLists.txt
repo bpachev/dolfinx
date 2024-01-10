@@ -1,4 +1,5 @@
 set(HEADERS_common
+    ${CMAKE_CURRENT_SOURCE_DIR}/CUDA.h
     ${CMAKE_CURRENT_SOURCE_DIR}/defines.h
     ${CMAKE_CURRENT_SOURCE_DIR}/dolfinx_common.h
     ${CMAKE_CURRENT_SOURCE_DIR}/dolfinx_doc.h
@@ -21,7 +22,8 @@ set(HEADERS_common
 
 target_sources(
   dolfinx
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/defines.cpp
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/defines.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/IndexMap.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/MPI.cpp

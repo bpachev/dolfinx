@@ -93,6 +93,7 @@ option(DOLFINX_ENABLE_PARMETIS "Compile with support for ParMETIS." ON)
 option(DOLFINX_ENABLE_SCOTCH "Compile with support for SCOTCH." ON)
 option(DOLFINX_ENABLE_SLEPC "Compile with support for SLEPc." ON)
 option(DOLFINX_ENABLE_KAHIP "Compile with support for KaHIP." OFF)
+option(DOLFINX_ENABLE_CUDATOOLKIT "Compile with support for CUDAToolkit." OFF)
 
 # ------------------------------------------------------------------------------
 # Check for MPI
@@ -365,6 +366,16 @@ if(NOT SCOTCH_FOUND
       "No graph partitioner found. SCOTCH, ParMETIS or KaHIP is required."
   )
 endif()
+
+if(DOLFINX_ENABLE_CUDATOOLKIT)
+  find_package(CUDAToolkit)
+endif()	
+
+set_package_properties(CUDAToolkit PROPERTIES TYPE OPTIONAL
+  DESCRIPTION "Parallel computing platform for GPUs"
+  URL "https://developer.nvidia.com/cuda-toolkit"
+  PURPOSE "Enables GPU-accelerated computing"
+)
 
 # ------------------------------------------------------------------------------
 # Print summary of found and not found optional packages

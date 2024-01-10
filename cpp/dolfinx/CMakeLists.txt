@@ -134,6 +134,13 @@ if(DOLFINX_ENABLE_KAHIP AND KAHIP_FOUND)
   target_include_directories(dolfinx SYSTEM PRIVATE ${KAHIP_INCLUDE_DIRS})
 endif()
 
+# CUDA Toolkit
+if (DOLFINX_ENABLE_CUDATOOLKIT AND CUDAToolkit_FOUND)
+  target_compile_definitions(dolfinx PUBLIC HAS_CUDA_TOOLKIT)
+  target_link_libraries(dolfinx PRIVATE CUDA::cuda_driver CUDA::nvrtc CUDA::cupti)
+  target_include_directories(dolfinx SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+endif()
+
 # ------------------------------------------------------------------------------
 # Install dolfinx library and header files
 install(

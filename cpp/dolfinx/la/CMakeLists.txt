@@ -1,4 +1,7 @@
 set(HEADERS_la
+    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAMatrix.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/CUDASeqMatrix.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAVector.h
     ${CMAKE_CURRENT_SOURCE_DIR}/dolfinx_la.h
     ${CMAKE_CURRENT_SOURCE_DIR}/MatrixCSR.h
     ${CMAKE_CURRENT_SOURCE_DIR}/matrix_csr_impl.h
@@ -12,7 +15,10 @@ set(HEADERS_la
 
 target_sources(
   dolfinx
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/SparsityPattern.cpp
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/CUDAMatrix.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/CUDASeqMatrix.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/CUDAVector.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/SparsityPattern.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/petsc.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/slepc.cpp
 )
