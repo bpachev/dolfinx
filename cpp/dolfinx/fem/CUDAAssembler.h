@@ -7,13 +7,12 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
-#include <dolfinx/fem/FormIntegrals.h>
+#include <dolfinx/fem/Form.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
 #endif
 
-#include <Eigen/Dense>
 
 #include <map>
 #include <memory>
@@ -136,7 +135,7 @@ public:
     const dolfinx::mesh::CUDAMesh& mesh,
     const dolfinx::fem::CUDADofMap& dofmap,
     const dolfinx::fem::CUDADirichletBC& bc,
-    const std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+    const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
     const dolfinx::fem::CUDAFormConstants& constants,
     const dolfinx::fem::CUDAFormCoefficients& coefficients,
     dolfinx::la::CUDAVector& b,
@@ -202,7 +201,7 @@ public:
     const dolfinx::mesh::CUDAMesh& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+    const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
     const dolfinx::fem::CUDAFormConstants& constants,
     const dolfinx::fem::CUDAFormCoefficients& coefficients,
     const dolfinx::fem::CUDADirichletBC& bcs1,
@@ -248,7 +247,7 @@ public:
     const dolfinx::mesh::CUDAMesh& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const std::vector<const dolfinx::fem::CUDADofMap*>& dofmap1,
-    const std::vector<const std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>*>& form_integrals,
+    const std::vector<const std::map<IntegralType, std::vector<CUDAFormIntegral>>*>& form_integrals,
     const std::vector<const dolfinx::fem::CUDAFormConstants*>& constants,
     const std::vector<const dolfinx::fem::CUDAFormCoefficients*>& coefficients,
     const std::vector<const dolfinx::fem::CUDADirichletBC*>& bcs1,
@@ -285,7 +284,7 @@ public:
     const dolfinx::fem::CUDADofMap& dofmap1,
     const dolfinx::fem::CUDADirichletBC& bc0,
     const dolfinx::fem::CUDADirichletBC& bc1,
-    std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
     const dolfinx::fem::CUDAFormConstants& constants,
     const dolfinx::fem::CUDAFormCoefficients& coefficients,
     dolfinx::la::CUDAMatrix& A,
@@ -298,7 +297,7 @@ public:
   ///                           integral of the variational form
   void assemble_matrix_local_copy_to_host(
     const CUDA::Context& cuda_context,
-    std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals) const;
+    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals) const;
 
   /// Perform global assembly on the host.
   ///
@@ -317,7 +316,7 @@ public:
     const CUDA::Context& cuda_context,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
     dolfinx::la::CUDAMatrix& A) const;
 
   /// Adds a value to the diagonal entries of a matrix that belong to
@@ -350,7 +349,7 @@ public:
     const dolfinx::fem::CUDADofMap& dofmap1,
     const dolfinx::fem::CUDADirichletBC& bc0,
     const dolfinx::fem::CUDADirichletBC& bc1,
-    std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
     dolfinx::la::CUDAMatrix& A,
     bool verbose) const;
 

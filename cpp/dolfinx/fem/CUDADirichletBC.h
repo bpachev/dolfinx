@@ -7,7 +7,8 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
-
+#include <dolfinx/fem/DirichletBC.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
 #endif
@@ -18,16 +19,18 @@
 #if defined(HAS_CUDA_TOOLKIT)
 namespace dolfinx {
 
-namespace function {
-class FunctionSpace;
-}
+//namespace function {
+//class FunctionSpace;
+//}
 
 namespace fem {
-class DirichletBC;
+//class DirichletBC;
 
 /// A wrapper for data marking which degrees of freedom that are
 /// affected by Dirichlet boundary conditions, with data being stored
 /// in the device memory of a CUDA device.
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 class CUDADirichletBC
 {
 public:
@@ -43,27 +46,27 @@ public:
   /// @param[in] bcs The boundary conditions to copy to device memory
   CUDADirichletBC(
     const CUDA::Context& cuda_context,
-    const dolfinx::function::FunctionSpace& V,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC>>& bcs);
+    const dolfinx::fem::FunctionSpace<T>& V,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>>& bcs);
 
   /// Destructor
   ~CUDADirichletBC();
 
   /// Copy constructor
   /// @param[in] bc The object to be copied
-  CUDADirichletBC(const CUDADirichletBC& bc) = delete;
+  CUDADirichletBC(const CUDADirichletBC<T,U>& bc) = delete;
 
   /// Move constructor
   /// @param[in] bc The object to be moved
-  CUDADirichletBC(CUDADirichletBC&& bc);
+  CUDADirichletBC(CUDADirichletBC<T,U>&& bc);
 
   /// Assignment operator
   /// @param[in] bc Another CUDADirichletBC object
-  CUDADirichletBC& operator=(const CUDADirichletBC& bc) = delete;
+  CUDADirichletBC& operator=(const CUDADirichletBC<T,U>& bc) = delete;
 
   /// Move assignment operator
   /// @param[in] bc Another CUDADirichletBC object
-  CUDADirichletBC& operator=(CUDADirichletBC&& bc);
+  CUDADirichletBC& operator=(CUDADirichletBC<T,U>&& bc);
 
   /// Get the number of degrees of freedom
   int32_t num_dofs() const { return _num_dofs; }

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
+#include <dolfinx/fem/Form.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -15,7 +16,6 @@
 #if defined(HAS_CUDA_TOOLKIT)
 namespace dolfinx {
 namespace fem {
-class Form;
 
 /// A wrapper for a form constant with data that is stored in the
 /// device memory of a CUDA device.

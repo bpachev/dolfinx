@@ -7,7 +7,7 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
-#include <dolfinx/fem/FormIntegrals.h>
+#include <dolfinx/fem/Form.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -97,7 +97,7 @@ public:
       const CUDA::Context& cuda_context,
       CUjit_target target,
       const Form& form,
-      FormIntegrals::Type integral_type, int i,
+      IntegralType integral_type, int i,
       int32_t max_threads_per_block,
       int32_t min_blocks_per_multiprocessor,
       int32_t num_vertices_per_cell,
@@ -129,7 +129,7 @@ public:
   CUDAFormIntegral& operator=(CUDAFormIntegral&& form_integral);
 
   /// Get the type of integral
-  FormIntegrals::Type integral_type() const { return _integral_type; }
+  IntegralType integral_type() const { return _integral_type; }
 
   /// Get the identifier of the integral
   int id() const { return _id; }
@@ -267,7 +267,7 @@ private:
 
 private:
   /// Type of the integral
-  FormIntegrals::Type _integral_type;
+  IntegralType _integral_type;
 
   /// Identifier for the integral
   int _id;
@@ -357,7 +357,7 @@ private:
 /// @param[in] form A variational form
 /// @param[in] assembly_kernel_type The type of assembly kernel to use
 /// @param[in] cudasrcdir Path for outputting CUDA C++ code
-std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>
+std::map<IntegralType, std::vector<CUDAFormIntegral>>
   cuda_form_integrals(
     const CUDA::Context& cuda_context,
     CUjit_target target,

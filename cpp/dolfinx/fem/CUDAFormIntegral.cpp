@@ -13,8 +13,7 @@
 #include <dolfinx/fem/CUDAFormConstants.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/fem/FormIntegrals.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/la/CUDAMatrix.h>
 #include <dolfinx/la/CUDASeqMatrix.h>
 #include <dolfinx/la/CUDAVector.h>
@@ -35,12 +34,12 @@ using namespace dolfinx::fem;
 #if defined(HAS_CUDA_TOOLKIT)
 namespace {
 
-std::string to_string(FormIntegrals::Type integral_type)
+std::string to_string(IntegralType integral_type)
 {
   switch (integral_type) {
-  case FormIntegrals::Type::cell: return "cell";
-  case FormIntegrals::Type::exterior_facet: return "exterior_facet";
-  case FormIntegrals::Type::interior_facet: return "interior_facet";
+  case IntegralType::cell: return "cell";
+  case IntegralType::exterior_facet: return "exterior_facet";
+  case IntegralType::interior_facet: return "interior_facet";
   default: return "unknown";
   }
 }
@@ -246,20 +245,20 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
 std::string cuda_kernel_assemble_vector(
   std::string assembly_kernel_name,
   std::string tabulate_tensor_function_name,
-  FormIntegrals::Type integral_type,
+  IntegralType integral_type,
   int32_t num_vertices_per_cell,
   int32_t num_coordinates_per_vertex,
   int32_t num_dofs_per_cell)
 {
   switch (integral_type) {
-  case FormIntegrals::Type::cell:
+  case IntegralType::cell:
     return cuda_kernel_assemble_vector_cell(
       assembly_kernel_name,
       tabulate_tensor_function_name,
       num_vertices_per_cell,
       num_coordinates_per_vertex,
       num_dofs_per_cell);
-  case FormIntegrals::Type::exterior_facet:
+  case IntegralType::exterior_facet:
     return cuda_kernel_assemble_vector_exterior_facet(
       assembly_kernel_name,
       tabulate_tensor_function_name,
@@ -395,14 +394,14 @@ std::string cuda_kernel_lift_bc_cell(
 std::string cuda_kernel_lift_bc(
   std::string kernel_name,
   std::string tabulate_tensor_function_name,
-  FormIntegrals::Type integral_type,
+  IntegralType integral_type,
   int32_t num_vertices_per_cell,
   int32_t num_coordinates_per_vertex,
   int32_t num_dofs_per_cell0,
   int32_t num_dofs_per_cell1)
 {
   switch (integral_type) {
-  case FormIntegrals::Type::cell:
+  case IntegralType::cell:
     return cuda_kernel_lift_bc_cell(
       kernel_name,
       tabulate_tensor_function_name,
@@ -1110,7 +1109,7 @@ std::string cuda_kernel_assemble_matrix_cell(
 std::string cuda_kernel_assemble_matrix(
   std::string assembly_kernel_name,
   std::string tabulate_tensor_function_name,
-  FormIntegrals::Type integral_type,
+  IntegralType integral_type,
   int32_t max_threads_per_block,
   int32_t min_blocks_per_multiprocessor,
   int32_t num_vertices_per_cell,
@@ -1120,7 +1119,7 @@ std::string cuda_kernel_assemble_matrix(
   enum assembly_kernel_type assembly_kernel_type)
 {
   switch (integral_type) {
-  case FormIntegrals::Type::cell:
+  case IntegralType::cell:
     return cuda_kernel_assemble_matrix_cell(
       assembly_kernel_name,
       tabulate_tensor_function_name,
@@ -1200,7 +1199,7 @@ CUDA::Module compile_form_integral_kernel(
   const CUDA::Context& cuda_context,
   CUjit_target target,
   int form_rank,
-  FormIntegrals::Type integral_type,
+  IntegralType integral_type,
   ufc_integral* integral,
   int32_t max_threads_per_block,
   int32_t min_blocks_per_multiprocessor,
@@ -1337,7 +1336,7 @@ CUDAFormIntegral::CUDAFormIntegral(
   const CUDA::Context& cuda_context,
   CUjit_target target,
   const Form& form,
-  FormIntegrals::Type integral_type, int i,
+  IntegralType integral_type, int i,
   int32_t max_threads_per_block,
   int32_t min_blocks_per_multiprocessor,
   int32_t num_vertices_per_cell,
@@ -1525,7 +1524,7 @@ CUDAFormIntegral::CUDAFormIntegral(CUDAFormIntegral&& form_integral)
   , _compute_lookup_table_kernel(form_integral._compute_lookup_table_kernel)
   , _lift_bc_kernel(form_integral._lift_bc_kernel)
 {
-  form_integral._integral_type = FormIntegrals::Type::cell;
+  form_integral._integral_type = IntegralType::cell;
   form_integral._id = 0;
   form_integral._name = std::string();
   form_integral._cudasrcdir = nullptr;
@@ -1577,7 +1576,7 @@ CUDAFormIntegral& CUDAFormIntegral::operator=(CUDAFormIntegral&& form_integral)
   _assembly_kernel = form_integral._assembly_kernel;
   _compute_lookup_table_kernel = form_integral._compute_lookup_table_kernel;
   _lift_bc_kernel = form_integral._lift_bc_kernel;
-  form_integral._integral_type = FormIntegrals::Type::cell;
+  form_integral._integral_type = IntegralType::cell;
   form_integral._id = 0;
   form_integral._name = std::string();
   form_integral._cudasrcdir = nullptr;
@@ -1941,12 +1940,12 @@ void CUDAFormIntegral::assemble_vector(
   const char * cuda_err_description;
 
   switch (_integral_type) {
-  case FormIntegrals::Type::cell:
+  case IntegralType::cell:
     assemble_vector_cell(
       cuda_context, _assembly_kernel, _num_mesh_entities + _num_mesh_ghost_entities, _dmesh_entities,
       mesh, dofmap, bc, constants, coefficients, cuda_vector, verbose);
     break;
-  case FormIntegrals::Type::exterior_facet:
+  case IntegralType::exterior_facet:
     assemble_vector_exterior_facet(
       cuda_context, _assembly_kernel, _num_mesh_entities + _num_mesh_ghost_entities, _dmesh_entities,
       mesh, dofmap, bc, constants, coefficients, cuda_vector, verbose);
@@ -2089,7 +2088,7 @@ void CUDAFormIntegral::lift_bc(
   const char * cuda_err_description;
 
   switch (_integral_type) {
-  case FormIntegrals::Type::cell:
+  case IntegralType::cell:
     lift_bc_cell(
       cuda_context, _lift_bc_kernel, mesh, dofmap0, dofmap1,
       bc1, constants, coefficients, scale, x0, b, verbose);
@@ -2786,7 +2785,7 @@ void CUDAFormIntegral::compute_lookup_table(
   }
 }
 //-----------------------------------------------------------------------------
-std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>
+std::map<IntegralType, std::vector<CUDAFormIntegral>>
 dolfinx::fem::cuda_form_integrals(
   const CUDA::Context& cuda_context,
   CUjit_target target,
@@ -2816,12 +2815,12 @@ dolfinx::fem::cuda_form_integrals(
     const DofMap& dofmap1 = *form.function_space(1)->dofmap();
     num_dofs_per_cell1 = dofmap1.element_dof_layout->num_dofs();
   }
-  std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>
+  std::map<IntegralType, std::vector<CUDAFormIntegral>>
     cuda_form_integrals;
 
   {
     // Create device-side kernels and data for cell integrals
-    FormIntegrals::Type integral_type = FormIntegrals::Type::cell;
+    IntegralType integral_type = IntegralType::cell;
     int num_integrals = form_integrals.num_integrals(integral_type);
     if (num_integrals > 0) {
       std::vector<CUDAFormIntegral>& cuda_cell_integrals =
@@ -2841,7 +2840,7 @@ dolfinx::fem::cuda_form_integrals(
 
   {
     // Create device-side kernels and data for exterior facet integrals
-    FormIntegrals::Type integral_type = FormIntegrals::Type::exterior_facet;
+    IntegralType integral_type = IntegralType::exterior_facet;
     int num_integrals = form_integrals.num_integrals(integral_type);
     if (num_integrals > 0) {
       std::vector<CUDAFormIntegral>& cuda_exterior_facet_integrals =
@@ -2861,7 +2860,7 @@ dolfinx::fem::cuda_form_integrals(
 
   {
     // Create device-side kernels and data for interior facet integrals
-    FormIntegrals::Type integral_type = FormIntegrals::Type::interior_facet;
+    IntegralType integral_type = IntegralType::interior_facet;
     int num_integrals = form_integrals.num_integrals(integral_type);
     if (num_integrals > 0) {
       std::vector<CUDAFormIntegral>& cuda_interior_facet_integrals =

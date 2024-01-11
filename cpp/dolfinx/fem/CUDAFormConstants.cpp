@@ -9,7 +9,6 @@
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/utils.h>
 
-#include <Eigen/Dense>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -43,7 +42,7 @@ CUDAFormConstants::CUDAFormConstants(
       "Unset constant in Form "
       "at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
   }
-  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1>
+  const std::vector<scalar_type> constant_data 
     constant_values = pack_constants(*_form);
 
   // Allocate device-side storage for constant values
@@ -106,7 +105,7 @@ void CUDAFormConstants::update_constant_values() const
   const char * cuda_err_description;
 
   // Pack constants into an array
-  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1>
+  const std::vector<scalar_type>  
     constant_values = pack_constants(*_form);
   assert(_num_constant_values == constant_values.size());
 

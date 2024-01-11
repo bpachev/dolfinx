@@ -45,12 +45,14 @@ CUDADofMap::CUDADofMap(
 
   // Obtain the cellwise-to-global mapping of the degrees of freedom
   const common::IndexMap& index_map = *dofmap.index_map;
-  _num_dofs = index_map.block_size() * (
-    index_map.size_local() + index_map.num_ghosts());
-  const graph::AdjacencyList<std::int32_t>& dofs = dofmap.list();
-  _num_cells = dofs.num_nodes();
-  _num_dofs_per_cell = dofmap.element_dof_layout->num_dofs();
-  const std::int32_t* dofs_per_cell = dofs.array().data();
+  const int block_size = dofmap.index_map_bs(); 
+  _num_dofs = block_size * (
+		  index_map.size_local() + index_map.num_ghosts());
+  auto dofs = dofmap.map();
+  // I'm pretty sure about this one, but not 100%
+  _num_cells = dofs.extent(0);
+  _num_dofs_per_cell = dofmap.element_dof_layout().num_dofs();
+  const std::int32_t* dofs_per_cell = dofs.data_handle();
 
   // Allocate device-side storage for degrees of freedom
   if (_num_cells > 0 && _num_dofs_per_cell > 0) {
@@ -83,9 +85,9 @@ CUDADofMap::CUDADofMap(
 
   // Count the number cells containing each degree of freedom
   for (int32_t i = 0; i < _num_cells; i++) {
-    auto cell_dofs = dofs.links(i);
+    auto cell_dofs = dofmap.cell_dofs(i);
     for (int32_t l = 0; l < cell_dofs.size(); l++) {
-      int32_t j = cell_dofs(l);
+      int32_t j = cell_dofs[l];
       cells_per_dof_ptr[j+1]++;
     }
   }
@@ -107,9 +109,9 @@ CUDADofMap::CUDADofMap(
   // of freedom
   std::vector<int32_t> cells_per_dof(num_dof_cells);
   for (int32_t i = 0; i < _num_cells; i++) {
-    auto cell_dofs = dofs.links(i);
+    auto cell_dofs = dofmap.cell_dofs(i);
     for (int32_t l = 0; l < cell_dofs.size(); l++) {
-      int32_t j = cell_dofs(l);
+      int32_t j = cell_dofs[l];
       int32_t p = cells_per_dof_ptr[j];
       cells_per_dof[p] = i;
       cells_per_dof_ptr[j]++;

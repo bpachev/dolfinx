@@ -10,13 +10,13 @@
 #include "Form.h"
 #include "utils.h"
 #include <dolfinx/common/CUDA.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/fem/CUDADirichletBC.h>
 #include <dolfinx/fem/CUDADofMap.h>
 #include <dolfinx/fem/CUDAFormIntegral.h>
 #include <dolfinx/fem/CUDAFormConstants.h>
 #include <dolfinx/fem/CUDAFormCoefficients.h>
-#include <dolfinx/function/Function.h>
+#include <dolfinx/fem/Function.h>
 #include <dolfinx/la/CUDAMatrix.h>
 #include <dolfinx/la/CUDASeqMatrix.h>
 #include <dolfinx/la/CUDAVector.h>
@@ -563,7 +563,7 @@ void CUDAAssembler::assemble_vector(
   const dolfinx::mesh::CUDAMesh& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
   const dolfinx::fem::CUDADirichletBC& bc,
-  const std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+  const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
   const dolfinx::fem::CUDAFormConstants& constants,
   const dolfinx::fem::CUDAFormCoefficients& coefficients,
   dolfinx::la::CUDAVector& b,
@@ -571,7 +571,7 @@ void CUDAAssembler::assemble_vector(
 {
   {
     // Perform assembly for cell integrals
-    auto it = form_integrals.find(FormIntegrals::Type::cell);
+    auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
       const std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
       for (auto const& cuda_cell_integral : cuda_cell_integrals) {
@@ -584,7 +584,7 @@ void CUDAAssembler::assemble_vector(
 
   {
     // Perform assembly for exterior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::exterior_facet);
+    auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
       const std::vector<CUDAFormIntegral>&
         cuda_exterior_facet_integrals = it->second;
@@ -600,7 +600,7 @@ void CUDAAssembler::assemble_vector(
 
   {
     // Perform assembly for interior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::interior_facet);
+    auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
       const std::vector<CUDAFormIntegral>&
         cuda_interior_facet_integrals = it->second;
@@ -706,7 +706,7 @@ void CUDAAssembler::lift_bc(
   const dolfinx::mesh::CUDAMesh& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+  const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
   const dolfinx::fem::CUDAFormConstants& constants,
   const dolfinx::fem::CUDAFormCoefficients& coefficients,
   const dolfinx::fem::CUDADirichletBC& bc1,
@@ -717,7 +717,7 @@ void CUDAAssembler::lift_bc(
 {
   {
     // Apply boundary conditions for cell integrals
-    auto it = form_integrals.find(FormIntegrals::Type::cell);
+    auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
       const std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
       auto const& cuda_cell_integral = cuda_cell_integrals.at(0);
@@ -729,7 +729,7 @@ void CUDAAssembler::lift_bc(
 
   {
     // Apply boundary conditions for exterior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::exterior_facet);
+    auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
       const std::vector<CUDAFormIntegral>& cuda_exterior_facet_integrals =
         it->second;
@@ -747,7 +747,7 @@ void CUDAAssembler::apply_lifting(
   const dolfinx::mesh::CUDAMesh& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const std::vector<const dolfinx::fem::CUDADofMap*>& dofmap1,
-  const std::vector<const std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>*>& form_integrals,
+  const std::vector<const std::map<IntegralType, std::vector<CUDAFormIntegral>>*>& form_integrals,
   const std::vector<const dolfinx::fem::CUDAFormConstants*>& constants,
   const std::vector<const dolfinx::fem::CUDAFormCoefficients*>& coefficients,
   const std::vector<const dolfinx::fem::CUDADirichletBC*>& bcs1,
@@ -770,7 +770,7 @@ void CUDAAssembler::assemble_matrix(
   const dolfinx::fem::CUDADofMap& dofmap1,
   const dolfinx::fem::CUDADirichletBC& bc0,
   const dolfinx::fem::CUDADirichletBC& bc1,
-  std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
   const dolfinx::fem::CUDAFormConstants& constants,
   const dolfinx::fem::CUDAFormCoefficients& coefficients,
   dolfinx::la::CUDAMatrix& A,
@@ -778,7 +778,7 @@ void CUDAAssembler::assemble_matrix(
 {
   {
     // Perform assembly for cell integrals
-    auto it = form_integrals.find(FormIntegrals::Type::cell);
+    auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
       for (auto & cuda_cell_integral : cuda_cell_integrals) {
@@ -791,7 +791,7 @@ void CUDAAssembler::assemble_matrix(
 
   {
     // Perform assembly for exterior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::exterior_facet);
+    auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>&
         cuda_exterior_facet_integrals = it->second;
@@ -807,7 +807,7 @@ void CUDAAssembler::assemble_matrix(
 
   {
     // Perform assembly for interior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::interior_facet);
+    auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>&
         cuda_interior_facet_integrals = it->second;
@@ -824,11 +824,11 @@ void CUDAAssembler::assemble_matrix(
 //-----------------------------------------------------------------------------
 void CUDAAssembler::assemble_matrix_local_copy_to_host(
   const CUDA::Context& cuda_context,
-  std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals) const
+  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals) const
 {
   {
     // Perform assembly for cell integrals
-    auto it = form_integrals.find(FormIntegrals::Type::cell);
+    auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
       for (auto & cuda_cell_integral : cuda_cell_integrals) {
@@ -840,7 +840,7 @@ void CUDAAssembler::assemble_matrix_local_copy_to_host(
 
   {
     // Perform assembly for exterior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::exterior_facet);
+    auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>&
         cuda_exterior_facet_integrals = it->second;
@@ -855,7 +855,7 @@ void CUDAAssembler::assemble_matrix_local_copy_to_host(
 
   {
     // Perform assembly for interior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::interior_facet);
+    auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>&
         cuda_interior_facet_integrals = it->second;
@@ -873,12 +873,12 @@ void CUDAAssembler::assemble_matrix_local_host_global_assembly(
   const CUDA::Context& cuda_context,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
   dolfinx::la::CUDAMatrix& A) const
 {
   {
     // Perform assembly for cell integrals
-    auto it = form_integrals.find(FormIntegrals::Type::cell);
+    auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
       for (auto & cuda_cell_integral : cuda_cell_integrals) {
@@ -890,7 +890,7 @@ void CUDAAssembler::assemble_matrix_local_host_global_assembly(
 
   {
     // Perform assembly for exterior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::exterior_facet);
+    auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>&
         cuda_exterior_facet_integrals = it->second;
@@ -905,7 +905,7 @@ void CUDAAssembler::assemble_matrix_local_host_global_assembly(
 
   {
     // Perform assembly for interior facet integrals
-    auto it = form_integrals.find(FormIntegrals::Type::interior_facet);
+    auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>&
         cuda_interior_facet_integrals = it->second;
@@ -1005,12 +1005,12 @@ void CUDAAssembler::compute_lookup_tables(
   const dolfinx::fem::CUDADofMap& dofmap1,
   const dolfinx::fem::CUDADirichletBC& bc0,
   const dolfinx::fem::CUDADirichletBC& bc1,
-  std::map<FormIntegrals::Type, std::vector<CUDAFormIntegral>>& form_integrals,
+  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
   dolfinx::la::CUDAMatrix& A,
   bool verbose) const
 {
   {
-    auto it = form_integrals.find(FormIntegrals::Type::cell);
+    auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
       auto & cuda_cell_integral = cuda_cell_integrals.at(0);
@@ -1020,7 +1020,7 @@ void CUDAAssembler::compute_lookup_tables(
   }
 
   {
-    auto it = form_integrals.find(FormIntegrals::Type::exterior_facet);
+    auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>& cuda_exterior_facet_integrals =
         it->second;
@@ -1032,7 +1032,7 @@ void CUDAAssembler::compute_lookup_tables(
   }
 
   {
-    auto it = form_integrals.find(FormIntegrals::Type::interior_facet);
+    auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
       std::vector<CUDAFormIntegral>& cuda_interior_facet_integrals =
         it->second;

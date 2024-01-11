@@ -9,7 +9,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -20,7 +20,8 @@ using namespace dolfinx::fem;
 
 #if defined(HAS_CUDA_TOOLKIT)
 //-----------------------------------------------------------------------------
-CUDADirichletBC::CUDADirichletBC()
+template <class T, class U>
+CUDADirichletBC<T, U>::CUDADirichletBC()
   : _num_dofs()
   , _num_owned_boundary_dofs()
   , _num_boundary_dofs()
@@ -31,10 +32,11 @@ CUDADirichletBC::CUDADirichletBC()
 {
 }
 //-----------------------------------------------------------------------------
-CUDADirichletBC::CUDADirichletBC(
+template <class T, class U>
+CUDADirichletBC<T, U>::CUDADirichletBC(
   const CUDA::Context& cuda_context,
-  const dolfinx::function::FunctionSpace& V,
-  const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC>>& bcs)
+  const dolfinx::fem::FunctionSpace<T>& V,
+  const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>>& bcs)
   : _num_dofs()
   , _num_owned_boundary_dofs()
   , _num_boundary_dofs()
@@ -49,8 +51,10 @@ CUDADirichletBC::CUDADirichletBC(
   // Count the number of degrees of freedom
   const dolfinx::fem::DofMap& dofmap = *(V.dofmap());
   const common::IndexMap& index_map = *dofmap.index_map;
-  _num_dofs = index_map.block_size() * (
-    index_map.size_local() + index_map.num_ghosts());
+  // Looks like index_map no longer has block_size
+  const int block_size = dofmap.index_map_bs();
+  _num_dofs = block_size * (
+		  index_map.size_local() + index_map.num_ghosts());
 
   // Count the number of degrees of freedom affected by boundary
   // conditions
@@ -65,9 +69,9 @@ CUDADirichletBC::CUDADirichletBC(
 
   // Build dof markers, indices and values
   char* dof_markers = nullptr;
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dof_indices(_num_boundary_dofs);
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dof_value_indices(_num_boundary_dofs);
-  Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1> dof_values;
+  std::vector<std::int32_t> dof_indices(_num_boundary_dofs);
+  std::vector<std::int32_t> dof_value_indices(_num_boundary_dofs);
+  std::vector<T> dof_values;
   _num_owned_boundary_dofs = 0;
   _num_boundary_dofs = 0;
   for (auto const& bc : bcs) {
@@ -76,15 +80,13 @@ CUDADirichletBC::CUDADirichletBC(
         dof_markers = new char[_num_dofs];
         for (int i = 0; i < _num_dofs; i++)
           dof_markers[i] = 0;
-        dof_values = Eigen::Matrix<
-          PetscScalar, Eigen::Dynamic, 1>::Zero(_num_dofs);
+        dof_values.assign(_num_dofs, 0.0);
       }
       bc->mark_dofs(_num_dofs, dof_markers);
-      const Eigen::Ref<const Eigen::Array<std::int32_t, Eigen::Dynamic, 2>>
-        dofs = bc->dofs();
+      auto dofs = bc->dofs();
       for (std::int32_t i = 0; i < dofs.rows(); i++) {
-        dof_indices(_num_boundary_dofs + i) = dofs(i,0);
-        dof_value_indices(_num_boundary_dofs + i) = dofs(i,1);
+        dof_indices[_num_boundary_dofs + i] = dofs(i,0);
+        dof_value_indices[_num_boundary_dofs + i] = dofs(i,1);
       }
       _num_owned_boundary_dofs += bc->dofs_owned().rows();
       _num_boundary_dofs += dofs.rows();
@@ -179,7 +181,7 @@ CUDADirichletBC::CUDADirichletBC(
 
   // Allocate device-side storage for dof values
   if (dof_markers && _num_dofs > 0) {
-    size_t ddof_values_size = _num_dofs * sizeof(PetscScalar);
+    size_t ddof_values_size = _num_dofs * sizeof(T);
     cuda_err = cuMemAlloc(&_ddof_values, ddof_values_size);
     if (cuda_err != CUDA_SUCCESS) {
       if (_ddof_value_indices)
@@ -213,7 +215,8 @@ CUDADirichletBC::CUDADirichletBC(
   }
 }
 //-----------------------------------------------------------------------------
-CUDADirichletBC::~CUDADirichletBC()
+template <class T, class U>
+CUDADirichletBC<T, U>::~CUDADirichletBC()
 {
   if (_ddof_values)
     cuMemFree(_ddof_values);
@@ -225,7 +228,8 @@ CUDADirichletBC::~CUDADirichletBC()
     cuMemFree(_ddof_markers);
 }
 //-----------------------------------------------------------------------------
-CUDADirichletBC::CUDADirichletBC(CUDADirichletBC&& bc)
+template <class T, class U>
+CUDADirichletBC<T, U>::CUDADirichletBC(CUDADirichletBC<T,U>&& bc)
   : _num_dofs(bc._num_dofs)
   , _num_owned_boundary_dofs(bc._num_owned_boundary_dofs)
   , _num_boundary_dofs(bc._num_boundary_dofs)
@@ -243,7 +247,8 @@ CUDADirichletBC::CUDADirichletBC(CUDADirichletBC&& bc)
   bc._ddof_values = 0;
 }
 //-----------------------------------------------------------------------------
-CUDADirichletBC& CUDADirichletBC::operator=(CUDADirichletBC&& bc)
+template <class T, class U>
+CUDADirichletBC<T, U>& CUDADirichletBC<T, U>::operator=(CUDADirichletBC<T, U>&& bc)
 {
   _num_dofs = bc._num_dofs;
   _num_owned_boundary_dofs = bc._num_owned_boundary_dofs;

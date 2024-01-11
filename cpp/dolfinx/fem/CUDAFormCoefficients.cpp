@@ -12,10 +12,9 @@
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/mesh/Mesh.h>
-#include <dolfinx/function/Function.h>
+#include <dolfinx/fem/Function.h>
 #include <dolfinx/common/IndexMap.h>
 
-#include <Eigen/Dense>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>

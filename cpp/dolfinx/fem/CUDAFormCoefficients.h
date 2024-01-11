@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <dolfinx/fem/FormCoefficients.h>
+#include <dolfinx/fem/Form.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <dolfinx/common/CUDA.h>
@@ -16,7 +16,6 @@
 #include <cuda.h>
 #endif
 
-#include <Eigen/Dense>
 #include <petscvec.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
@@ -29,6 +28,9 @@ class Form;
 class CUDAFormCoefficients
 {
 public:
+  /// Scalar Type
+  using scalar_type = T;
+
   /// Create an empty collection coefficient values
   CUDAFormCoefficients();
 
@@ -101,7 +103,7 @@ public:
 
 private:
   /// The underlying coefficients on the host
-  dolfinx::fem::FormCoefficients* _coefficients;
+  std::vector<std::shared_ptr<const Function<T, U>>> _coefficients;
 
   /// Number of dofs per cell for each coefficient
   CUdeviceptr _dofmaps_num_dofs_per_cell;
@@ -128,7 +130,7 @@ private:
   bool _page_lock;
 
   /// Host-side array of coefficient values
-  mutable Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+  mutable std::vector<T> 
     _host_coefficient_values;
 
   /// The coefficient values
