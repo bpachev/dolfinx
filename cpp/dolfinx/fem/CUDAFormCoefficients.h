@@ -21,10 +21,11 @@
 #if defined(HAS_CUDA_TOOLKIT)
 namespace dolfinx {
 namespace fem {
-class Form;
 
 /// A wrapper for a form coefficient with data that is stored in the
 /// device memory of a CUDA device.
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 class CUDAFormCoefficients
 {
 public:
@@ -42,7 +43,7 @@ public:
   ///                      for host-side arrays
   CUDAFormCoefficients(
     const CUDA::Context& cuda_context,
-    Form* form,
+    Form<T,U>* form,
     bool page_lock = true);
 
   /// Destructor
@@ -67,7 +68,7 @@ public:
   /// Get the number of mesh cells that the coefficient applies to
   int32_t num_coefficients() const { return _coefficients->size(); }
 
-  dolfinx::fem::FormCoefficients* coefficients() { return _coefficients; };
+  const std::vector<std::shared_ptr<const Function<T, U>>>& coefficients() { return _coefficients; };
 
   /// Get device-side pointer to number of dofs per cell for each coefficient
   CUdeviceptr dofmaps_num_dofs_per_cell() const { return _dofmaps_num_dofs_per_cell; }

@@ -19,6 +19,7 @@ namespace fem {
 
 /// A wrapper for a form constant with data that is stored in the
 /// device memory of a CUDA device.
+template <dolfinx::scalar T>
 class CUDAFormConstants
 {
 public:
@@ -31,7 +32,7 @@ public:
   /// @param[in] form The variational form whose constants are used
   CUDAFormConstants(
     const CUDA::Context& cuda_context,
-    const Form* form);
+    const Form<T>* form);
 
   /// Destructor
   ~CUDAFormConstants();
@@ -63,7 +64,7 @@ public:
 
 private:
   // The form that the constant applies to
-  const Form* _form;
+  const Form<T>* _form;
 
   /// The number of constant values
   int32_t _num_constant_values;

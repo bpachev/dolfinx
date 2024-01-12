@@ -447,9 +447,11 @@ void CUDAAssembler::zero_vector_entries(
   x.restore_values_write();
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::pack_coefficients(
   const CUDA::Context& cuda_context,
-  dolfinx::fem::CUDAFormCoefficients& coefficients,
+  dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   bool verbose) const
 {
   CUresult cuda_err;
@@ -457,7 +459,7 @@ void CUDAAssembler::pack_coefficients(
 
   {
       std::int32_t num_coefficients = coefficients.num_coefficients();
-      dolfinx::fem::FormCoefficients* _coefficients = coefficients.coefficients();
+      const std::vector<std::shared_ptr<const Function<T, U>>>& _coefficients = coefficients.coefficients();
       CUdeviceptr dcoefficient_values = coefficients.coefficient_values();
 
       std::vector<CUdeviceptr> coefficient_values(num_coefficients);
@@ -550,7 +552,7 @@ void CUDAAssembler::pack_coefficients(
   }
 
   {
-      dolfinx::fem::FormCoefficients* _coefficients = coefficients.coefficients();
+      auto _coefficients = coefficients.coefficients();
       for (int i = 0; i < num_coefficients; i++) {
           const la::CUDAVector& cuda_x = _coefficients->get(i)->cuda_vector(cuda_context);
           cuda_x.restore_values();
@@ -558,14 +560,16 @@ void CUDAAssembler::pack_coefficients(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::assemble_vector(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC& bc,
-  const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+  const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAVector& b,
   bool verbose) const
 {
@@ -573,7 +577,7 @@ void CUDAAssembler::assemble_vector(
     // Perform assembly for cell integrals
     auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
-      const std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
+      const std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
       for (auto const& cuda_cell_integral : cuda_cell_integrals) {
         cuda_cell_integral.assemble_vector(
           cuda_context, mesh, dofmap, bc,
@@ -586,7 +590,7 @@ void CUDAAssembler::assemble_vector(
     // Perform assembly for exterior facet integrals
     auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
-      const std::vector<CUDAFormIntegral>&
+      const std::vector<CUDAFormIntegral<T,U>>&
         cuda_exterior_facet_integrals = it->second;
       for (auto const& cuda_exterior_facet_integral :
              cuda_exterior_facet_integrals)
@@ -602,7 +606,7 @@ void CUDAAssembler::assemble_vector(
     // Perform assembly for interior facet integrals
     auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
-      const std::vector<CUDAFormIntegral>&
+      const std::vector<CUDAFormIntegral<T,U>>&
         cuda_interior_facet_integrals = it->second;
       for (auto const& cuda_interior_facet_integral :
              cuda_interior_facet_integrals)
@@ -615,9 +619,11 @@ void CUDAAssembler::assemble_vector(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::set_bc(
   const CUDA::Context& cuda_context,
-  const dolfinx::fem::CUDADirichletBC& bc,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
   const dolfinx::la::CUDAVector& x0,
   double scale,
   dolfinx::la::CUDAVector& b) const
@@ -701,15 +707,17 @@ void CUDAAssembler::set_bc(
   x0.restore_values();
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::lift_bc(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
-  const dolfinx::fem::CUDADirichletBC& bc1,
+  const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
   const dolfinx::la::CUDAVector& x0,
   double scale,
   dolfinx::la::CUDAVector& b,
@@ -719,7 +727,7 @@ void CUDAAssembler::lift_bc(
     // Apply boundary conditions for cell integrals
     auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
-      const std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
+      const std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
       auto const& cuda_cell_integral = cuda_cell_integrals.at(0);
       cuda_cell_integral.lift_bc(
         cuda_context, mesh, dofmap0, dofmap1, bc1,
@@ -731,7 +739,7 @@ void CUDAAssembler::lift_bc(
     // Apply boundary conditions for exterior facet integrals
     auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
-      const std::vector<CUDAFormIntegral>& cuda_exterior_facet_integrals =
+      const std::vector<CUDAFormIntegral<T,U>>& cuda_exterior_facet_integrals =
         it->second;
       auto const& cuda_exterior_facet_integral =
         cuda_exterior_facet_integrals.at(0);
@@ -742,15 +750,17 @@ void CUDAAssembler::lift_bc(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::apply_lifting(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const std::vector<const dolfinx::fem::CUDADofMap*>& dofmap1,
-  const std::vector<const std::map<IntegralType, std::vector<CUDAFormIntegral>>*>& form_integrals,
-  const std::vector<const dolfinx::fem::CUDAFormConstants*>& constants,
-  const std::vector<const dolfinx::fem::CUDAFormCoefficients*>& coefficients,
-  const std::vector<const dolfinx::fem::CUDADirichletBC*>& bcs1,
+  const std::vector<const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>*>& form_integrals,
+  const std::vector<const dolfinx::fem::CUDAFormConstants<T>*>& constants,
+  const std::vector<const dolfinx::fem::CUDAFormCoefficients<T,U>*>& coefficients,
+  const std::vector<const dolfinx::fem::CUDADirichletBC<T,U>*>& bcs1,
   const std::vector<const dolfinx::la::CUDAVector*>& x0,
   double scale,
   dolfinx::la::CUDAVector& b,
@@ -763,16 +773,18 @@ void CUDAAssembler::apply_lifting(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::assemble_matrix(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAMatrix& A,
   bool verbose) const
 {
@@ -780,7 +792,7 @@ void CUDAAssembler::assemble_matrix(
     // Perform assembly for cell integrals
     auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
+      std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
       for (auto & cuda_cell_integral : cuda_cell_integrals) {
         cuda_cell_integral.assemble_matrix(
           cuda_context, mesh, dofmap0, dofmap1, bc0, bc1,
@@ -793,7 +805,7 @@ void CUDAAssembler::assemble_matrix(
     // Perform assembly for exterior facet integrals
     auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>&
+      std::vector<CUDAFormIntegral<T,U>>&
         cuda_exterior_facet_integrals = it->second;
       for (auto & cuda_exterior_facet_integral :
              cuda_exterior_facet_integrals)
@@ -809,7 +821,7 @@ void CUDAAssembler::assemble_matrix(
     // Perform assembly for interior facet integrals
     auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>&
+      std::vector<CUDAFormIntegral<T,U>>&
         cuda_interior_facet_integrals = it->second;
       for (auto & cuda_interior_facet_integral :
              cuda_interior_facet_integrals)
@@ -822,15 +834,17 @@ void CUDAAssembler::assemble_matrix(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::assemble_matrix_local_copy_to_host(
   const CUDA::Context& cuda_context,
-  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals) const
+  std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals) const
 {
   {
     // Perform assembly for cell integrals
     auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
+      std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
       for (auto & cuda_cell_integral : cuda_cell_integrals) {
         cuda_cell_integral.assemble_matrix_local_copy_to_host(
           cuda_context);
@@ -842,7 +856,7 @@ void CUDAAssembler::assemble_matrix_local_copy_to_host(
     // Perform assembly for exterior facet integrals
     auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>&
+      std::vector<CUDAFormIntegral<T,U>>&
         cuda_exterior_facet_integrals = it->second;
       for (auto & cuda_exterior_facet_integral :
              cuda_exterior_facet_integrals)
@@ -857,7 +871,7 @@ void CUDAAssembler::assemble_matrix_local_copy_to_host(
     // Perform assembly for interior facet integrals
     auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>&
+      std::vector<CUDAFormIntegral<T,U>>&
         cuda_interior_facet_integrals = it->second;
       for (auto & cuda_interior_facet_integral :
              cuda_interior_facet_integrals)
@@ -869,18 +883,20 @@ void CUDAAssembler::assemble_matrix_local_copy_to_host(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::assemble_matrix_local_host_global_assembly(
   const CUDA::Context& cuda_context,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
+  std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
   dolfinx::la::CUDAMatrix& A) const
 {
   {
     // Perform assembly for cell integrals
     auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
+      std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
       for (auto & cuda_cell_integral : cuda_cell_integrals) {
         cuda_cell_integral.assemble_matrix_local_host_global_assembly(
           cuda_context, dofmap0, dofmap1, A);
@@ -892,7 +908,7 @@ void CUDAAssembler::assemble_matrix_local_host_global_assembly(
     // Perform assembly for exterior facet integrals
     auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>&
+      std::vector<CUDAFormIntegral<T,U>>&
         cuda_exterior_facet_integrals = it->second;
       for (auto & cuda_exterior_facet_integral :
              cuda_exterior_facet_integrals)
@@ -907,7 +923,7 @@ void CUDAAssembler::assemble_matrix_local_host_global_assembly(
     // Perform assembly for interior facet integrals
     auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>&
+      std::vector<CUDAFormIntegral<T,U>>&
         cuda_interior_facet_integrals = it->second;
       for (auto & cuda_interior_facet_integral :
              cuda_interior_facet_integrals)
@@ -919,10 +935,12 @@ void CUDAAssembler::assemble_matrix_local_host_global_assembly(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::add_diagonal(
   const CUDA::Context& cuda_context,
   dolfinx::la::CUDAMatrix& A,
-  const dolfinx::fem::CUDADirichletBC& bc,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
   double diagonal) const
 {
   CUresult cuda_err;
@@ -999,20 +1017,22 @@ void CUDAAssembler::add_diagonal(
   }
 }
 //-----------------------------------------------------------------------------
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 void CUDAAssembler::compute_lookup_tables(
   const CUDA::Context& cuda_context,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
   dolfinx::la::CUDAMatrix& A,
   bool verbose) const
 {
   {
     auto it = form_integrals.find(IntegralType::cell);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>& cuda_cell_integrals = it->second;
+      std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
       auto & cuda_cell_integral = cuda_cell_integrals.at(0);
       cuda_cell_integral.compute_lookup_table(
         cuda_context, dofmap0, dofmap1, bc0, bc1, A, verbose);
@@ -1022,7 +1042,7 @@ void CUDAAssembler::compute_lookup_tables(
   {
     auto it = form_integrals.find(IntegralType::exterior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>& cuda_exterior_facet_integrals =
+      std::vector<CUDAFormIntegral<T,U>>& cuda_exterior_facet_integrals =
         it->second;
       auto & cuda_exterior_facet_integral =
         cuda_exterior_facet_integrals.at(0);
@@ -1034,7 +1054,7 @@ void CUDAAssembler::compute_lookup_tables(
   {
     auto it = form_integrals.find(IntegralType::interior_facet);
     if (it != form_integrals.end()) {
-      std::vector<CUDAFormIntegral>& cuda_interior_facet_integrals =
+      std::vector<CUDAFormIntegral<T,U>>& cuda_interior_facet_integrals =
         it->second;
       auto & cuda_interior_facet_integral =
         cuda_interior_facet_integrals.at(0);

@@ -19,16 +19,18 @@ using namespace dolfinx::fem;
 
 #if defined(HAS_CUDA_TOOLKIT)
 //-----------------------------------------------------------------------------
-CUDAFormConstants::CUDAFormConstants()
+template <class T>
+CUDAFormConstants<T>::CUDAFormConstants()
   : _form(nullptr)
   , _num_constant_values()
   , _dconstant_values(0)
 {
 }
 //-----------------------------------------------------------------------------
-CUDAFormConstants::CUDAFormConstants(
+template <class T>
+CUDAFormConstants<T>::CUDAFormConstants(
   const CUDA::Context& cuda_context,
-  const Form* form)
+  const Form<T>* form)
   : _form(form)
   , _num_constant_values()
   , _dconstant_values(0)
@@ -42,14 +44,14 @@ CUDAFormConstants::CUDAFormConstants(
       "Unset constant in Form "
       "at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
   }
-  const std::vector<scalar_type> constant_data 
+  const std::vector<T>
     constant_values = pack_constants(*_form);
 
   // Allocate device-side storage for constant values
   _num_constant_values = constant_values.size();
   if (_num_constant_values > 0) {
     size_t dconstant_values_size =
-      _num_constant_values * sizeof(PetscScalar);
+      _num_constant_values * sizeof(T);
     cuda_err = cuMemAlloc(
       &_dconstant_values, dconstant_values_size);
     if (cuda_err != CUDA_SUCCESS) {
@@ -72,13 +74,15 @@ CUDAFormConstants::CUDAFormConstants(
   }
 }
 //-----------------------------------------------------------------------------
-CUDAFormConstants::~CUDAFormConstants()
+template <class T>
+CUDAFormConstants<T>::~CUDAFormConstants()
 {
   if (_dconstant_values)
     cuMemFree(_dconstant_values);
 }
 //-----------------------------------------------------------------------------
-CUDAFormConstants::CUDAFormConstants(CUDAFormConstants&& constants)
+template <class T>
+CUDAFormConstants<T>::CUDAFormConstants(CUDAFormConstants<T>&& constants)
   : _form(constants._form)
   , _num_constant_values(constants._num_constant_values)
   , _dconstant_values(constants._dconstant_values)
@@ -88,7 +92,8 @@ CUDAFormConstants::CUDAFormConstants(CUDAFormConstants&& constants)
   constants._dconstant_values = 0;
 }
 //-----------------------------------------------------------------------------
-CUDAFormConstants& CUDAFormConstants::operator=(CUDAFormConstants&& constants)
+template <class T>
+CUDAFormConstants<T>& CUDAFormConstants<T>::operator=(CUDAFormConstants<T>&& constants)
 {
   _form = constants._form;
   _num_constant_values = constants._num_constant_values;
@@ -99,20 +104,21 @@ CUDAFormConstants& CUDAFormConstants::operator=(CUDAFormConstants&& constants)
   return *this;
 }
 //-----------------------------------------------------------------------------
-void CUDAFormConstants::update_constant_values() const
+template <class T>
+void CUDAFormConstants<T>::update_constant_values() const
 {
   CUresult cuda_err;
   const char * cuda_err_description;
 
   // Pack constants into an array
-  const std::vector<scalar_type>  
+  const std::vector<T>  
     constant_values = pack_constants(*_form);
   assert(_num_constant_values == constant_values.size());
 
   // Copy constant values to device
   if (_num_constant_values > 0) {
     size_t dconstant_values_size =
-      _num_constant_values * sizeof(PetscScalar);
+      _num_constant_values * sizeof(T);
     cuda_err = cuMemcpyHtoD(
       _dconstant_values, constant_values.data(), dconstant_values_size);
     if (cuda_err != CUDA_SUCCESS) {

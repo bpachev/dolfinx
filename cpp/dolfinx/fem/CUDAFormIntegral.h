@@ -7,7 +7,12 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
+#include <dolfinx/fem/CUDADirichletBC.h>
+#include <dolfinx/fem/CUDADofMap.h>
+#include <dolfinx/fem/CUDAFormConstants.h>
+#include <dolfinx/fem/CUDAFormCoefficients.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/mesh/CUDAMesh.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -18,9 +23,6 @@
 #include <vector>
 
 namespace dolfinx {
-namespace mesh {
-class CUDAMesh;
-}
 
 namespace la {
 class CUDAMatrix;
@@ -28,11 +30,6 @@ class CUDAVector;
 }
 
 namespace fem {
-class Form;
-class CUDADofMap;
-class CUDADirichletBC;
-class CUDAFormConstants;
-class CUDAFormCoefficients;
 
 /**
  * `assembly_kernel_type` is used to enumerate different kinds of
@@ -78,6 +75,8 @@ enum assembly_kernel_type
 #if defined(HAS_CUDA_TOOLKIT)
 /// A wrapper for a form integral with a CUDA-based assembly kernel
 /// and data that is stored in the device memory of a CUDA device.
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
 class CUDAFormIntegral
 {
 public:
@@ -96,7 +95,7 @@ public:
   CUDAFormIntegral(
       const CUDA::Context& cuda_context,
       CUjit_target target,
-      const Form& form,
+      const Form<T,U>& form,
       IntegralType integral_type, int i,
       int32_t max_threads_per_block,
       int32_t min_blocks_per_multiprocessor,
@@ -114,19 +113,19 @@ public:
 
   /// Copy constructor
   /// @param[in] form_integral The object to be copied
-  CUDAFormIntegral(const CUDAFormIntegral& form_integral) = delete;
+  CUDAFormIntegral(const CUDAFormIntegral<T,U>& form_integral) = delete;
 
   /// Move constructor
   /// @param[in] form_integral The object to be moved
-  CUDAFormIntegral(CUDAFormIntegral&& form_integral);
+  CUDAFormIntegral(CUDAFormIntegral<T,U>&& form_integral);
 
   /// Assignment operator
   /// @param[in] form_integral Another CUDAFormIntegral object
-  CUDAFormIntegral& operator=(const CUDAFormIntegral& form_integral) = delete;
+  CUDAFormIntegral<T,U>& operator=(const CUDAFormIntegral<T,U>& form_integral) = delete;
 
   /// Move assignment operator
   /// @param[in] form_integral Another CUDAFormIntegral object
-  CUDAFormIntegral& operator=(CUDAFormIntegral&& form_integral);
+  CUDAFormIntegral<T,U>& operator=(CUDAFormIntegral<T,U>&& form_integral);
 
   /// Get the type of integral
   IntegralType integral_type() const { return _integral_type; }
@@ -156,23 +155,23 @@ public:
   /// Assemble a vector from the form integral
   void assemble_vector(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap,
-    const dolfinx::fem::CUDADirichletBC& bc,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAVector& cuda_vector,
     bool verbose) const;
 
   /// Assemble a matrix from the form integral
   void lift_bc(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     double scale,
     const dolfinx::la::CUDAVector& x0,
     dolfinx::la::CUDAVector& b,
@@ -182,13 +181,13 @@ public:
   /// assembly on a CUDA device and global assembly on the host
   void assemble_matrix_local(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
     bool verbose);
 
@@ -207,13 +206,13 @@ public:
   /// Assemble a matrix from the form integral
   void assemble_matrix(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
     bool verbose);
 
@@ -223,45 +222,45 @@ public:
     const CUDA::Context& cuda_context,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
     dolfinx::la::CUDAMatrix& A,
     bool verbose);
 
 private:
   void assemble_matrix_global(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
     bool verbose);
 
   void assemble_matrix_lookup_table(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
     bool verbose);
 
   void assemble_matrix_rowwise(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
     bool verbose);
 
@@ -313,7 +312,7 @@ private:
   /// Host-side storage for element vector or matrix values, which is
   /// used for kernels that only perform local assembly on a CUDA
   /// device, but perform global assembly on the host.
-  std::vector<PetscScalar> _element_values;
+  std::vector<T> _element_values;
 
   /// Device-side storage for element vector or matrix values, which
   /// is used for kernels that only perform local assembly on a CUDA
@@ -357,11 +356,13 @@ private:
 /// @param[in] form A variational form
 /// @param[in] assembly_kernel_type The type of assembly kernel to use
 /// @param[in] cudasrcdir Path for outputting CUDA C++ code
-std::map<IntegralType, std::vector<CUDAFormIntegral>>
+template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
+std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>
   cuda_form_integrals(
     const CUDA::Context& cuda_context,
     CUjit_target target,
-    const Form& form,
+    const Form<T,U>& form,
     enum assembly_kernel_type assembly_kernel_type,
     int32_t max_threads_per_block,
     int32_t min_blocks_per_multiprocessor,

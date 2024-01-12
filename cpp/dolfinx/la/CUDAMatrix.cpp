@@ -8,6 +8,8 @@
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/la/CUDASeqMatrix.h>
 #include <dolfinx/la/utils.h>
+#include <dolfinx/la/petsc.h>
+#include <vector>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -60,23 +62,23 @@ CUDAMatrix::CUDAMatrix(
   MatType matrix_type;
   ierr = MatGetType(A, &matrix_type);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetType");
+    la::petsc::error(ierr, __FILE__, "MatGetType");
 
   // Get the number of matrix rows and columns
   ierr = MatGetSize(A, &_num_rows, &_num_columns);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetSize");
+    la::petsc::error(ierr, __FILE__, "MatGetSize");
 
   // Get the number of rows and columns owned by the current MPI process
   ierr = MatGetLocalSize(A, &_num_local_rows, &_num_local_columns);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetLocalSize");
+    la::petsc::error(ierr, __FILE__, "MatGetLocalSize");
 
   // TODO: We might need to do some additional work to handle non-zero
   // local_row_start.
   ierr = MatGetOwnershipRange(A, &_local_row_start, &_local_row_end);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetOwnershipRange");
+    la::petsc::error(ierr, __FILE__, "MatGetOwnershipRange");
 
   if (strcmp(matrix_type, MATSEQAIJ) == 0 ||
       strcmp(matrix_type, MATSEQAIJCUSPARSE) == 0)
@@ -93,7 +95,7 @@ CUDAMatrix::CUDAMatrix(
     const int * colmap;
     ierr = MatMPIAIJGetSeqAIJ(A, &Ad, &Ao, &colmap);
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "MatMPIAIJGetSeqAIJ");
+      la::petsc::error(ierr, __FILE__, "MatMPIAIJGetSeqAIJ");
     _diag = std::make_unique<CUDASeqMatrix>(
       cuda_context, Ad, page_lock_values, use_seqaijcusparsegetarray);
     _offdiag = std::make_unique<CUDASeqMatrix>(
@@ -103,21 +105,21 @@ CUDAMatrix::CUDAMatrix(
     // matrix.
     ierr = MatGetLocalSize(Ao, NULL, &_num_local_offdiag_columns);
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "MatGetLocalSize");
+      la::petsc::error(ierr, __FILE__, "MatGetLocalSize");
 
     // Convert the column map from global numbering to the
     // process-local numbering
     ISLocalToGlobalMapping cmapping;
     ierr = MatGetLocalToGlobalMapping(A, NULL, &cmapping);
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "MatGetLocalToGlobalMapping");
+      la::petsc::error(ierr, __FILE__, "MatGetLocalToGlobalMapping");
 
     std::vector<std::int32_t> colmap_local(_num_local_offdiag_columns);
     ierr = ISGlobalToLocalMappingApply(
       cmapping, IS_GTOLM_MASK, _num_local_offdiag_columns, colmap,
       NULL, colmap_local.data());
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "ISGlobalToLocalMappingApply");
+      la::petsc::error(ierr, __FILE__, "ISGlobalToLocalMappingApply");
 
     // Allocate device-side storage for off-diagonal column map
     if (_num_local_offdiag_columns > 0) {
@@ -220,10 +222,10 @@ void CUDAMatrix::apply(MatAssemblyType type)
   PetscErrorCode ierr;
   ierr = MatAssemblyBegin(_A, type);
   if (ierr != 0)
-    petsc_error(ierr, __FILE__, "MatAssemblyBegin");
+    petsc::error(ierr, __FILE__, "MatAssemblyBegin");
   ierr = MatAssemblyEnd(_A, type);
   if (ierr != 0)
-    petsc_error(ierr, __FILE__, "MatAssemblyEnd");
+    petsc::error(ierr, __FILE__, "MatAssemblyEnd");
 }
 //-----------------------------------------------------------------------------
 #endif

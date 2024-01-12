@@ -7,6 +7,8 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
+#include <dolfinx/mesh/Mesh.h>
+#include <dolfinx/mesh/CUDAMeshEntities.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -17,11 +19,10 @@
 #if defined(HAS_CUDA_TOOLKIT)
 namespace dolfinx {
 namespace mesh {
-class Mesh;
-class CUDAMeshEntities;
 
 /// A wrapper for mesh data that is stored in the device memory of a
 /// CUDA device.
+template <std::floating_point T>
 class CUDAMesh
 {
 public:
@@ -32,7 +33,7 @@ public:
   ///
   /// @param[in] cuda_context A context for a CUDA device
   /// @param[in] mesh Data structures for mesh topology and geometry
-  CUDAMesh(const CUDA::Context& cuda_context, const dolfinx::mesh::Mesh& mesh);
+  CUDAMesh(const CUDA::Context& cuda_context, const dolfinx::mesh::Mesh<T>& mesh);
 
   /// Destructor
   ~CUDAMesh();
@@ -83,7 +84,7 @@ public:
     return _dcell_permutations; }
 
   /// Get the mesh entities of each dimension
-  const std::vector<CUDAMeshEntities>& mesh_entities() const {
+  const std::vector<CUDAMeshEntities<T>>& mesh_entities() const {
     return _mesh_entities; }
 
 private:
@@ -113,7 +114,7 @@ private:
   CUdeviceptr _dcell_permutations;
 
   /// The mesh entities of each dimension
-  std::vector<CUDAMeshEntities> _mesh_entities;
+  std::vector<CUDAMeshEntities<T>> _mesh_entities;
 };
 
 } // namespace mesh

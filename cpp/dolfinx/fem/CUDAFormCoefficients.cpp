@@ -8,6 +8,7 @@
 #if defined(HAS_CUDA_TOOLKIT)
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/fem/CUDADofMap.h>
+#include <dolfinx/la/CUDAVector.h>
 #endif
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/utils.h>
@@ -25,7 +26,8 @@ using namespace dolfinx::fem;
 
 #if defined(HAS_CUDA_TOOLKIT)
 //-----------------------------------------------------------------------------
-CUDAFormCoefficients::CUDAFormCoefficients()
+template <class T, class U>
+CUDAFormCoefficients<T,U>::CUDAFormCoefficients()
   : _coefficients(nullptr)
   , _dofmaps_num_dofs_per_cell(0)
   , _dofmaps_dofs_per_cell(0)
@@ -39,9 +41,10 @@ CUDAFormCoefficients::CUDAFormCoefficients()
 {
 }
 //-----------------------------------------------------------------------------
-CUDAFormCoefficients::CUDAFormCoefficients(
+template <class T, class U>
+CUDAFormCoefficients<T,U>::CUDAFormCoefficients(
   const CUDA::Context& cuda_context,
-  Form* form,
+  Form<T,U>* form,
   bool page_lock)
   : _coefficients(&form->coefficients())
   , _dofmaps_num_dofs_per_cell(0)
@@ -60,7 +63,7 @@ CUDAFormCoefficients::CUDAFormCoefficients(
   const std::vector<int>& offsets = _coefficients->offsets();
 
   // Get the number of cells in the mesh
-  std::shared_ptr<const mesh::Mesh> mesh = form->mesh();
+  std::shared_ptr<const mesh::Mesh<U>> mesh = form->mesh();
   const int tdim = mesh->topology().dim();
   _num_cells = mesh->topology().index_map(tdim)->size_local()
     + mesh->topology().index_map(tdim)->num_ghosts();
@@ -234,7 +237,8 @@ CUDAFormCoefficients::CUDAFormCoefficients(
 #endif
 }
 //-----------------------------------------------------------------------------
-CUDAFormCoefficients::~CUDAFormCoefficients()
+template <class T, class U>
+CUDAFormCoefficients<T,U>::~CUDAFormCoefficients()
 {
   CUresult cuda_err;
   const char * cuda_err_description;
@@ -262,8 +266,9 @@ CUDAFormCoefficients::~CUDAFormCoefficients()
     cuMemFree(_dpacked_coefficient_values);
 }
 //-----------------------------------------------------------------------------
-CUDAFormCoefficients::CUDAFormCoefficients(
-  CUDAFormCoefficients&& form_coefficients)
+template <class T, class U>
+CUDAFormCoefficients<T,U>::CUDAFormCoefficients(
+  CUDAFormCoefficients<T,U>&& form_coefficients)
   : _coefficients(form_coefficients._coefficients)
   , _dofmaps_num_dofs_per_cell(form_coefficients._dofmaps_num_dofs_per_cell)
   , _dofmaps_dofs_per_cell(form_coefficients._dofmaps_dofs_per_cell)
@@ -286,8 +291,9 @@ CUDAFormCoefficients::CUDAFormCoefficients(
   form_coefficients._dpacked_coefficient_values = 0;
 }
 //-----------------------------------------------------------------------------
-CUDAFormCoefficients& CUDAFormCoefficients::operator=(
-  CUDAFormCoefficients&& form_coefficients)
+template <class T, class U>
+CUDAFormCoefficients<T,U>& CUDAFormCoefficients<T,U>::operator=(
+  CUDAFormCoefficients<T,U>&& form_coefficients)
 {
   _coefficients = form_coefficients._coefficients;
   _dofmaps_num_dofs_per_cell = form_coefficients._dofmaps_num_dofs_per_cell;
@@ -311,7 +317,8 @@ CUDAFormCoefficients& CUDAFormCoefficients::operator=(
   return *this;
 }
 //-----------------------------------------------------------------------------
-void CUDAFormCoefficients::copy_coefficients_to_device(
+template <class T, class U>
+void CUDAFormCoefficients<T,U>::copy_coefficients_to_device(
   const CUDA::Context& cuda_context)
 {
   for (int i = 0; i < _coefficients->size(); i++) {
@@ -322,7 +329,8 @@ void CUDAFormCoefficients::copy_coefficients_to_device(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormCoefficients::update_coefficient_values() const
+template <class T, class U>
+void CUDAFormCoefficients<T,U>::update_coefficient_values() const
 {
   CUresult cuda_err;
   const char * cuda_err_description;

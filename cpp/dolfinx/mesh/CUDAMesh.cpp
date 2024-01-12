@@ -18,7 +18,8 @@ using namespace dolfinx::mesh;
 
 #if defined(HAS_CUDA_TOOLKIT)
 //-----------------------------------------------------------------------------
-CUDAMesh::CUDAMesh()
+template <class T>
+CUDAMesh<T>::CUDAMesh()
   : _tdim()
   , _num_vertices()
   , _num_coordinates_per_vertex()
@@ -31,9 +32,10 @@ CUDAMesh::CUDAMesh()
 {
 }
 //-----------------------------------------------------------------------------
-CUDAMesh::CUDAMesh(
+template <class T>
+CUDAMesh<T>::CUDAMesh(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::Mesh& mesh)
+  const dolfinx::mesh::Mesh<T>& mesh)
 {
   CUresult cuda_err;
   const char * cuda_err_description;
@@ -41,9 +43,8 @@ CUDAMesh::CUDAMesh(
   _tdim = mesh.topology().dim();
 
   // Allocate device-side storage for vertex coordinates
-  const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>&
-    vertex_coordinates = mesh.geometry().x();
-  _num_vertices = vertex_coordinates.rows();
+  auto vertex_coordinates = mesh.geometry().x();
+  _num_vertices = vertex_coordinates.length() / 3;
   _num_coordinates_per_vertex = mesh.geometry().dim();
   if (_num_vertices > 0 && _num_coordinates_per_vertex > 0) {
     if (_num_coordinates_per_vertex > 3) {
@@ -80,14 +81,12 @@ CUDAMesh::CUDAMesh(
   }
 
   // Obtain mesh geometry
-  const graph::AdjacencyList<std::int32_t>& x_dofmap =
+  auto x_dofmap =
     mesh.geometry().dofmap();
-  const Eigen::Array<int32_t, Eigen::Dynamic, 1>&
-    vertex_indices_per_cell = x_dofmap.array();
 
   // Allocate device-side storage for cell vertex indices
-  _num_cells = x_dofmap.num_nodes();
-  _num_vertices_per_cell = x_dofmap.num_links(0);
+  _num_cells = x_dofmap.extent(0);
+  _num_vertices_per_cell = x_dofmap.extent(1);
   if (_num_cells > 0 && _num_vertices_per_cell > 0) {
     size_t dvertex_indices_per_cell_size =
       _num_cells * _num_vertices_per_cell * sizeof(int32_t);
@@ -105,7 +104,7 @@ CUDAMesh::CUDAMesh(
     // Copy cell vertex indices to device
     cuda_err = cuMemcpyHtoD(
       _dvertex_indices_per_cell,
-      vertex_indices_per_cell.data(),
+      x_dofmap.data_handle(),
       dvertex_indices_per_cell_size);
     if (cuda_err != CUDA_SUCCESS) {
       cuMemFree(_dvertex_indices_per_cell);
@@ -119,8 +118,7 @@ CUDAMesh::CUDAMesh(
 
   // Obtain cell permutations
   mesh.topology_mutable().create_entity_permutations();
-  const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_permutations
-    = mesh.topology().get_cell_permutation_info();
+  auto cell_permutations = mesh.topology().get_cell_permutation_info();
 
   // Allocate device-side storage for cell permutations
   if (_num_cells > 0) {
@@ -158,7 +156,8 @@ CUDAMesh::CUDAMesh(
   }
 }
 //-----------------------------------------------------------------------------
-CUDAMesh::~CUDAMesh()
+template <class T>
+CUDAMesh<T>::~CUDAMesh()
 {
   if (_dcell_permutations)
     cuMemFree(_dcell_permutations);
@@ -168,7 +167,8 @@ CUDAMesh::~CUDAMesh()
     cuMemFree(_dvertex_coordinates);
 }
 //-----------------------------------------------------------------------------
-CUDAMesh::CUDAMesh(CUDAMesh&& mesh)
+template <class T>
+CUDAMesh<T>::CUDAMesh(CUDAMesh<T>&& mesh)
   : _tdim(mesh._tdim)
   , _num_vertices(mesh._num_vertices)
   , _num_coordinates_per_vertex(mesh._num_coordinates_per_vertex)
@@ -189,7 +189,8 @@ CUDAMesh::CUDAMesh(CUDAMesh&& mesh)
   mesh._dcell_permutations = 0;
 }
 //-----------------------------------------------------------------------------
-CUDAMesh& CUDAMesh::operator=(CUDAMesh&& mesh)
+template <class T>
+CUDAMesh<T>& CUDAMesh<T>::operator=(CUDAMesh<T>&& mesh)
 {
   _tdim = mesh._tdim;
   _num_vertices = mesh._num_vertices;

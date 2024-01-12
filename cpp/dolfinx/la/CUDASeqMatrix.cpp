@@ -7,6 +7,8 @@
 #include "CUDASeqMatrix.h"
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/la/utils.h>
+#include <dolfinx/la/petsc.h>
+#include <iostream>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -67,7 +69,7 @@ CUDASeqMatrix::CUDASeqMatrix(
   MatType matrix_type;
   ierr = MatGetType(A, &matrix_type);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetType");
+    la::petsc::error(ierr, __FILE__, "MatGetType");
 
   if (strcmp(matrix_type, MATSEQAIJ) != 0 &&
       strcmp(matrix_type, MATSEQAIJCUSPARSE) != 0)
@@ -80,18 +82,18 @@ CUDASeqMatrix::CUDASeqMatrix(
   // Get the number of matrix rows and columns
   ierr = MatGetSize(A, &_num_rows, &_num_columns);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetSize");
+    la::petsc::error(ierr, __FILE__, "MatGetSize");
 
   // Get the number of rows and columns owned by the current MPI process
   ierr = MatGetLocalSize(A, &_num_local_rows, &_num_local_columns);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetLocalSize");
+    la::petsc::error(ierr, __FILE__, "MatGetLocalSize");
 
   // TODO: We might need to do some additional work to handle non-zero
   // local_row_start.
   ierr = MatGetOwnershipRange(A, &_local_row_start, &_local_row_end);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetOwnershipRange");
+    la::petsc::error(ierr, __FILE__, "MatGetOwnershipRange");
 
   // Obtain the row pointers and column indices of the matrix
   std::int32_t n;
@@ -105,7 +107,7 @@ CUDASeqMatrix::CUDASeqMatrix(
     _A, shift, symmetric, inodecompressed,
     &n, &row_ptr, &column_indices, &status);
   if (ierr != 0)
-    la::petsc_error(ierr, __FILE__, "MatGetRowIJ");
+    la::petsc::error(ierr, __FILE__, "MatGetRowIJ");
   if (status == PETSC_FALSE) {
     throw std::runtime_error(
       "MatGetRowIJ failed with status PETSC_FALSE "
@@ -208,7 +210,7 @@ CUDASeqMatrix::CUDASeqMatrix(
   if (ierr != 0) {
     cuMemFree(_dcolumn_indices);
     cuMemFree(_drow_ptr);
-    la::petsc_error(ierr, __FILE__, "MatRestoreRowIJ");
+    la::petsc::error(ierr, __FILE__, "MatRestoreRowIJ");
   }
   if (status == PETSC_FALSE) {
     cuMemFree(_dcolumn_indices);
@@ -244,7 +246,7 @@ CUDASeqMatrix::CUDASeqMatrix(
   if (ierr != 0) {
     cuMemFree(_dcolumn_indices);
     cuMemFree(_drow_ptr);
-    la::petsc_error(ierr, __FILE__, "MatSeqAIJGetArray");
+    la::petsc::error(ierr, __FILE__, "MatSeqAIJGetArray");
   }
 
   // Allocate device-side storage for non-zero values
@@ -319,7 +321,7 @@ CUDASeqMatrix::CUDASeqMatrix(
     cuMemFree(_dvalues);
     cuMemFree(_dcolumn_indices);
     cuMemFree(_drow_ptr);
-    la::petsc_error(ierr, __FILE__, "MatSeqAIJRestoreArray");
+    la::petsc::error(ierr, __FILE__, "MatSeqAIJRestoreArray");
   }
 }
 //-----------------------------------------------------------------------------
@@ -449,7 +451,7 @@ CUdeviceptr CUDASeqMatrix::values() const
 
     ierr = MatSeqAIJCUSPARSEGetArray(_A, (PetscScalar **) &_dvalues);
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "MatSeqAIJCUSPARSEGetArray");
+      la::petsc::error(ierr, __FILE__, "MatSeqAIJCUSPARSEGetArray");
     return _dvalues;
 #else
     throw std::logic_error(
@@ -471,7 +473,7 @@ void CUDASeqMatrix::copy_matrix_values_to_host(
     PetscScalar* values;
     ierr = MatSeqAIJGetArray(_A, &values);
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "MatSeqAIJGetArray");
+      la::petsc::error(ierr, __FILE__, "MatSeqAIJGetArray");
 
     // Copy device-side global matrix values to the host
     size_t dvalues_size = _num_local_nonzeros * sizeof(PetscScalar);
@@ -511,13 +513,13 @@ void CUDASeqMatrix::copy_matrix_values_to_host(
         std::cerr << "MatSeqAIJRestoreArray failed with " << ierr
                   << " at " << __FILE__ << ":" << __LINE__ << std::endl;
       }
-      la::petsc_error(ierr, __FILE__, "MatSetValuesRow");
+      la::petsc::error(ierr, __FILE__, "MatSetValuesRow");
     }
 
     // Return the matrix values
     ierr = MatSeqAIJRestoreArray(_A, &values);
     if (ierr != 0)
-      la::petsc_error(ierr, __FILE__, "MatSeqAIJRestoreArray");
+      la::petsc::error(ierr, __FILE__, "MatSeqAIJRestoreArray");
 
   } else if (_dvalues_petsc_owned) {
 #if defined(PETSC_HAS_MATSEQAIJCUSPARSEGETARRAY)
@@ -525,7 +527,7 @@ void CUDASeqMatrix::copy_matrix_values_to_host(
     if (_dvalues) {
       ierr = MatSeqAIJCUSPARSERestoreArray(_A, (PetscScalar **) &_dvalues);
       if (ierr != 0)
-        la::petsc_error(ierr, __FILE__, "MatSeqAIJCUSPARSERestoreArray");
+        la::petsc::error(ierr, __FILE__, "MatSeqAIJCUSPARSERestoreArray");
     }
 #else
     throw std::logic_error(
@@ -540,10 +542,10 @@ void CUDASeqMatrix::apply(MatAssemblyType type)
   PetscErrorCode ierr;
   ierr = MatAssemblyBegin(_A, type);
   if (ierr != 0)
-    petsc_error(ierr, __FILE__, "MatAssemblyBegin");
+    petsc::error(ierr, __FILE__, "MatAssemblyBegin");
   ierr = MatAssemblyEnd(_A, type);
   if (ierr != 0)
-    petsc_error(ierr, __FILE__, "MatAssemblyEnd");
+    petsc::error(ierr, __FILE__, "MatAssemblyEnd");
 }
 //-----------------------------------------------------------------------------
 #endif

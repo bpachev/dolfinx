@@ -18,7 +18,8 @@ using namespace dolfinx::mesh;
 
 #if defined(HAS_CUDA_TOOLKIT)
 //-----------------------------------------------------------------------------
-CUDAMeshEntities::CUDAMeshEntities()
+template <class T>
+CUDAMeshEntities<T>::CUDAMeshEntities()
   : _tdim()
   , _dim()
   , _num_cells()
@@ -31,9 +32,10 @@ CUDAMeshEntities::CUDAMeshEntities()
 {
 }
 //-----------------------------------------------------------------------------
-CUDAMeshEntities::CUDAMeshEntities(
+template <class T>
+CUDAMeshEntities<T>::CUDAMeshEntities(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::Mesh& mesh,
+  const dolfinx::mesh::Mesh<T>& mesh,
   int dim)
   : _tdim(mesh.topology().dim())
   , _dim(dim)
@@ -46,7 +48,7 @@ CUDAMeshEntities::CUDAMeshEntities(
   mesh.topology_mutable().create_entities(_dim);
   mesh.topology_mutable().create_connectivity(_dim, _tdim);
   mesh.topology_mutable().create_entity_permutations();
-  const graph::AdjacencyList<std::int32_t>& cells_to_mesh_entities =
+const graph::AdjacencyList<std::int32_t>& cells_to_mesh_entities =
     *mesh.topology().connectivity(_tdim, _dim);
 
   // Allocate device-side storage for mesh entities of each cell
@@ -66,7 +68,7 @@ CUDAMeshEntities::CUDAMeshEntities(
     }
 
     // Copy mesh entities of each cell to device
-    const Eigen::Array<int32_t, Eigen::Dynamic, 1>&
+    const std::vector<int32_t>&
       mesh_entities_per_cell = cells_to_mesh_entities.array();
     cuda_err = cuMemcpyHtoD(
       _dmesh_entities_per_cell,
@@ -84,7 +86,7 @@ CUDAMeshEntities::CUDAMeshEntities(
   // mesh entity
   const graph::AdjacencyList<std::int32_t>& mesh_entities_to_cells =
     *mesh.topology().connectivity(_dim, _tdim);
-  const Eigen::Array<int32_t, Eigen::Dynamic, 1>&
+  const std::vector<std::int32_t>&
     cells_per_mesh_entity_ptr = mesh_entities_to_cells.offsets();
   _num_mesh_entities = mesh_entities_to_cells.num_nodes();
   assert(_num_mesh_entities+1 == cells_per_mesh_entity_ptr.size());
@@ -113,7 +115,7 @@ CUDAMeshEntities::CUDAMeshEntities(
   }
 
   // Allocate device-side storage for the cells of each mesh entity
-  const Eigen::Array<int32_t, Eigen::Dynamic, 1>&
+  const std::vector<std::int32_t>&
     cells_per_mesh_entity = mesh_entities_to_cells.array();
   assert(_num_mesh_entities < 0 ||
          cells_per_mesh_entity_ptr[_num_mesh_entities] == cells_per_mesh_entity.size());
@@ -145,8 +147,7 @@ CUDAMeshEntities::CUDAMeshEntities(
   if (_dim == _tdim-1) {
     // Obtain cell permutations
     mesh.topology_mutable().create_entity_permutations();
-    const Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>&
-      mesh_entity_permutations = mesh.topology().get_facet_permutations();
+    auto mesh_entity_permutations = mesh.topology().get_facet_permutations();
 
     // Allocate device-side storage for mesh entity permutations
     if (_num_mesh_entities_per_cell > 0 && _num_cells > 0) {
@@ -178,7 +179,8 @@ CUDAMeshEntities::CUDAMeshEntities(
   }
 }
 //-----------------------------------------------------------------------------
-CUDAMeshEntities::~CUDAMeshEntities()
+template <class T>
+CUDAMeshEntities<T>::~CUDAMeshEntities()
 {
   if (_dmesh_entity_permutations)
     cuMemFree(_dmesh_entity_permutations);
@@ -190,7 +192,8 @@ CUDAMeshEntities::~CUDAMeshEntities()
     cuMemFree(_dmesh_entities_per_cell);
 }
 //-----------------------------------------------------------------------------
-CUDAMeshEntities::CUDAMeshEntities(CUDAMeshEntities&& mesh)
+template <class T>
+CUDAMeshEntities<T>::CUDAMeshEntities(CUDAMeshEntities<T>&& mesh)
   : _tdim(mesh._tdim)
   , _dim(mesh._dim)
   , _num_cells(mesh._num_cells)
@@ -212,7 +215,8 @@ CUDAMeshEntities::CUDAMeshEntities(CUDAMeshEntities&& mesh)
   mesh._dmesh_entity_permutations = 0;
 }
 //-----------------------------------------------------------------------------
-CUDAMeshEntities& CUDAMeshEntities::operator=(CUDAMeshEntities&& mesh)
+template <class T>
+CUDAMeshEntities<T>& CUDAMeshEntities<T>::operator=(CUDAMeshEntities<T>&& mesh)
 {
   _tdim = mesh._tdim;
   _dim = mesh._dim;

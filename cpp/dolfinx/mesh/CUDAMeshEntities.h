@@ -7,7 +7,7 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
-
+#include <dolfinx/mesh/Mesh.h>
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
 #endif
@@ -15,10 +15,10 @@
 #if defined(HAS_CUDA_TOOLKIT)
 namespace dolfinx {
 namespace mesh {
-class Mesh;
 
 /// A wrapper for data related to mesh entities of a given dimension,
 /// stored in the device memory of a CUDA device.
+template <std::floating_point T>
 class CUDAMeshEntities
 {
 public:
@@ -32,7 +32,7 @@ public:
   /// @param[in] dim The dimension of mesh entities
   CUDAMeshEntities(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::Mesh& mesh,
+    const dolfinx::mesh::Mesh<T>& mesh,
     int dim);
 
   /// Destructor

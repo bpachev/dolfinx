@@ -17,6 +17,10 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/Topology.h>
+#if defined(HAS_CUDA_TOOLKIT)
+#include <dolfinx/common/CUDA.h>
+#include <dolfinx/la/CUDAVector.h>
+#endif
 #include <functional>
 #include <memory>
 #include <numeric>
@@ -56,6 +60,9 @@ public:
       : _function_space(V),
         _x(std::make_shared<la::Vector<value_type>>(
             V->dofmap()->index_map, V->dofmap()->index_map_bs()))
+  #if defined(HAS_CUDA_TOOLKIT)
+	,_cuda_vector(nullptr)
+  #endif
   {
     if (!V->component().empty())
     {
@@ -63,6 +70,26 @@ public:
                                "collapsing the function space");
     }
   }
+
+  #if defined(HAS_CUDA_TOOLKIT)
+  /// Create function on given function space
+  /// @param[in] cuda_context A context for a CUDA device
+  /// @param[in] V The function space
+  explicit Function(
+      const CUDA::Context& cuda_context,
+      std::shared_ptr<const FunctionSpace<geometry_type>> V)
+      : _function_space(V),
+        _x(std::make_shared<la::Vector<value_type>>(
+            V->dofmap()->index_map, V->dofmap()->index_map_bs())),
+	_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(cuda_context, _x.vec()))
+  {
+    if (!V->component().empty())
+    {
+      throw std::runtime_error("Cannot create Function from subspace. Consider "
+                               "collapsing the function space");
+    }
+  }
+  #endif
 
   /// @brief Create function on given function space with a given
   /// vector.
@@ -149,6 +176,42 @@ public:
 
   /// @brief Underlying vector
   std::shared_ptr<la::Vector<value_type>> x() { return _x; }
+
+  #if defined(HAS_CUDA_TOOLKIT)
+  /// @brief Return device-side vector of expansion coefficients (non-const version)
+  /// @return The device-side vector of expansion coefficients
+  la::CUDAVector& cuda_vector(const CUDA::Context& cuda_context)
+  {
+    // Check that this is not a sub function.
+    assert(_function_space->dofmap());
+    assert(_function_space->dofmap()->index_map);
+    if (_x.size()
+        != _function_space->dofmap()->index_map->size_global()
+               * _function_space->dofmap()->index_map_bs())
+    {
+      throw std::runtime_error(
+          "Cannot access a non-const vector from a subfunction");
+    }
+
+    if (!_cuda_vector) {
+      _cuda_vector = std::make_shared<dolfinx::la::CUDAVector>(
+        cuda_context, _x.vec());
+    }
+    return *_cuda_vector.get();
+  }
+
+  /// @brief Return vector of expansion coefficients (const version)
+  /// @return The vector of expansion coefficients
+  const la::CUDAVector& cuda_vector(const CUDA::Context& cuda_context) const
+  {
+    if (!_cuda_vector) {
+      _cuda_vector = std::make_shared<dolfinx::la::CUDAVector>(
+        cuda_context, _x.vec());
+    }
+    return *_cuda_vector.get();
+  }
+  #endif
+
 
   /// @brief Interpolate a provided Function.
   /// @param[in] v The function to be interpolated
@@ -659,6 +722,11 @@ private:
 
   // The vector of expansion coefficients (local)
   std::shared_ptr<la::Vector<value_type>> _x;
+
+#if defined(HAS_CUDA_TOOLKIT)
+  // Device-side vector of expansion coefficients
+  mutable std::shared_ptr<la::CUDAVector> _cuda_vector;
+#endif
 };
 
 } // namespace dolfinx::fem

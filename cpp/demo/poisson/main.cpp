@@ -92,6 +92,20 @@
 #include <dolfinx.h>
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/petsc.h>
+
+#if defined(HAS_CUDA_TOOLKIT)
+#include <dolfinx/common/CUDA.h>
+#include <dolfinx/fem/CUDAAssembler.h>
+#include <dolfinx/fem/CUDADirichletBC.h>
+#include <dolfinx/fem/CUDADofMap.h>
+#include <dolfinx/fem/CUDAFormIntegral.h>
+#include <dolfinx/fem/CUDAFormConstants.h>
+#include <dolfinx/fem/CUDAFormCoefficients.h>
+#include <dolfinx/la/CUDAMatrix.h>
+#include <dolfinx/la/CUDAVector.h>
+#include <dolfinx/mesh/CUDAMesh.h>
+#endif
+
 #include <utility>
 #include <vector>
 
@@ -120,6 +134,9 @@ int main(int argc, char* argv[])
   PetscInitialize(&argc, &argv, nullptr, nullptr);
 
   {
+#if defined(HAS_CUDA_TOOLKIT)
+    dolfinx::CUDA::Context cuda_context;
+#endif
     // Create mesh and function space
     auto part = mesh::create_cell_partitioner(mesh::GhostMode::shared_facet);
     auto mesh = std::make_shared<mesh::Mesh<U>>(
@@ -139,9 +156,13 @@ int main(int argc, char* argv[])
 
     // Prepare and set Constants for the bilinear form
     auto kappa = std::make_shared<fem::Constant<T>>(2.0);
+#if !defined(HAS_CUDA_TOOLKIT)
     auto f = std::make_shared<fem::Function<T>>(V);
     auto g = std::make_shared<fem::Function<T>>(V);
-
+#else
+    auto f = std::make_shared<fem::Function<T>>(cuda_context, V);
+    auto g = std::make_shared<fem::Function<T>>(cuda_context, V);
+#endif    
     // Define variational forms
     auto a = std::make_shared<fem::Form<T>>(fem::create_form<T>(
         *form_poisson_a, {V, V}, {}, {{"kappa", kappa}}, {}));
@@ -196,6 +217,10 @@ int main(int argc, char* argv[])
           return {f, {f.size()}};
         });
 
+#if defined(HAS_CUDA_TOOLKIT)
+    f->cuda_vector(cuda_context).copy_vector_values_to_device(cuda_context);
+#endif
+
     g->interpolate(
         [](auto x) -> std::pair<std::vector<T>, std::vector<std::size_t>>
         {
@@ -204,6 +229,10 @@ int main(int argc, char* argv[])
             f.push_back(std::sin(5 * x(0, p)));
           return {f, {f.size()}};
         });
+
+#if defined(HAS_CUDA_TOOLKIT)
+    g->cuda_vector(cuda_context).copy_vector_values_to_device(cuda_context);
+#endif
 
     // Now, we have specified the variational forms and can consider the
     // solution of the variational problem. First, we need to define a
@@ -219,7 +248,44 @@ int main(int argc, char* argv[])
     auto A = la::petsc::Matrix(fem::petsc::create_matrix(*a), false);
     la::Vector<T> b(L->function_spaces()[0]->dofmap()->index_map,
                     L->function_spaces()[0]->dofmap()->index_map_bs());
-
+#if defined(HAS_CUDA_TOOLKIT)
+    dolfinx::fem::CUDAAssembler assembler(
+    cuda_context, true, "poisson_demo_cudasrcdir", false);
+    dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *mesh);
+    V->create_cuda_dofmap(cuda_context);
+    std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
+    a->function_space(0)->cuda_dofmap();
+    std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap1 =
+    a->function_space(1)->cuda_dofmap();
+    dolfinx::fem::CUDADirichletBC<T,U> cuda_bc0(
+    cuda_context, *a->function_space(0), bc);
+    dolfinx::fem::CUDADirichletBC<T,U> cuda_bc1(
+    cuda_context, *a->function_space(1), bc);
+    std::map<dolfinx::fem::IntegralType,
+           std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
+    cuda_a_form_integrals = cuda_form_integrals(
+      cuda_context, *a, dolfinx::fem::ASSEMBLY_KERNEL_LOOKUP_TABLE,
+      false, NULL, false);
+    dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
+    cuda_context, a.get());
+    dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
+    cuda_context, a.get());
+    assembler.pack_coefficients(
+      cuda_context, cuda_a_form_coefficients, false);
+    dolfinx::la::CUDAMatrix cuda_A(cuda_context, A.mat(), false, false);
+    assembler.compute_lookup_tables(
+    cuda_context, *cuda_dofmap0, *cuda_dofmap1,
+    cuda_bc0, cuda_bc1, cuda_a_form_integrals, cuda_A, false);
+    assembler.zero_matrix_entries(cuda_context, cuda_A);
+    assembler.assemble_matrix(
+    cuda_context, cuda_mesh, *cuda_dofmap0, *cuda_dofmap1,
+    cuda_bc0, cuda_bc1, cuda_a_form_integrals,
+    cuda_a_form_constants, cuda_a_form_coefficients,
+    cuda_A, false);
+    assembler.add_diagonal(cuda_context, cuda_A, cuda_bc0);
+    cuda_A.copy_matrix_values_to_host(cuda_context);
+    cuda_A.apply(MAT_FINAL_ASSEMBLY);
+#else
     MatZeroEntries(A.mat());
     fem::assemble_matrix(la::petsc::Matrix::set_block_fn(A.mat(), ADD_VALUES),
                          *a, {bc});
@@ -229,12 +295,46 @@ int main(int argc, char* argv[])
                          {bc});
     MatAssemblyBegin(A.mat(), MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A.mat(), MAT_FINAL_ASSEMBLY);
+#endif
 
+#if defined(HAS_CUDA_TOOLKIT)
+    std::map<dolfinx::fem::FormIntegrals::Type,
+           std::vector<dolfinx::fem::CUDAFormIntegral>>
+    cuda_L_form_integrals_ = cuda_form_integrals(
+      cuda_context, *L, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
+      false, NULL, false);
+    dolfinx::fem::CUDAFormConstants<T> cuda_L_form_constants(
+    cuda_context, L.get());
+    dolfinx::fem::CUDAFormCoefficients<T,U> cuda_L_form_coefficients(
+    cuda_context, L.get());
+    assembler.pack_coefficients(
+      cuda_context, cuda_L_form_coefficients, false);
+    la::PETScVector x0(*a->function_space(1)->dofmap()->index_map);
+    dolfinx::la::CUDAVector cuda_x0(cuda_context, x0.vec());
+    dolfinx::la::CUDAVector cuda_b(cuda_context, b.vec());
+    assembler.zero_vector_entries(cuda_context, cuda_x0);
+    assembler.zero_vector_entries(cuda_context, cuda_b);
+    cuda_b.copy_vector_values_to_host(cuda_context);
+    cuda_b.update_ghosts();
+    assembler.assemble_vector(
+        cuda_context, cuda_mesh, *cuda_dofmap0, cuda_bc0,
+        cuda_L_form_integrals_, cuda_L_form_constants,
+        cuda_L_form_coefficients, cuda_b, false);
+    assembler.apply_lifting(
+        cuda_context, cuda_mesh, *cuda_dofmap0,
+        {cuda_dofmap1.get()}, {&cuda_a_form_integrals}, {&cuda_a_form_constants},
+        {&cuda_a_form_coefficients},
+        {&cuda_bc1}, {&cuda_x0}, 1.0, cuda_b, false);
+    cuda_b.copy_vector_values_to_host(cuda_context);
+    cuda_b.apply_ghosts();
+    assembler.set_bc(cuda_context, cuda_bc0, cuda_x0, 1.0, cuda_b);
+#else
     b.set(0.0);
     fem::assemble_vector(b.mutable_array(), *L);
     fem::apply_lifting<T, U>(b.mutable_array(), {a}, {{bc}}, {}, T(1));
     b.scatter_rev(std::plus<T>());
     fem::set_bc<T, U>(b.mutable_array(), {bc});
+#endif
 
     la::petsc::KrylovSolver lu(MPI_COMM_WORLD);
     la::petsc::options::set("ksp_type", "preonly");

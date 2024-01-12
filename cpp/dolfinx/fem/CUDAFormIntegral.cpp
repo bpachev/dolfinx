@@ -17,11 +17,12 @@
 #include <dolfinx/la/CUDAMatrix.h>
 #include <dolfinx/la/CUDASeqMatrix.h>
 #include <dolfinx/la/CUDAVector.h>
+#include <dolfinx/la/petsc.h>
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/CUDAMesh.h>
 #include <dolfinx/mesh/CUDAMeshEntities.h>
 #include <dolfinx/mesh/Mesh.h>
-#include <ufc.h>
+#include <ufcx.h>
 
 
 #if defined(HAS_CUDA_TOOLKIT)
@@ -43,6 +44,8 @@ std::string to_string(IntegralType integral_type)
   default: return "unknown";
   }
 }
+
+/// TODO: we need to somehow fix ufc_scalar_t as it is no longer set by basix
 
 /// CUDA C++ code for cellwise assembly of a vector from a form
 /// integral over mesh cells
@@ -1200,7 +1203,7 @@ CUDA::Module compile_form_integral_kernel(
   CUjit_target target,
   int form_rank,
   IntegralType integral_type,
-  ufc_integral* integral,
+  ufcx_integral* integral,
   int32_t max_threads_per_block,
   int32_t min_blocks_per_multiprocessor,
   int32_t num_vertices_per_cell,
@@ -1225,10 +1228,18 @@ CUDA::Module compile_form_integral_kernel(
     &tabulate_tensor_function_name);
 
   // Generate CUDA C++ code for the assembly kernel
+
+  // extract the factory/integral name from the tabulate tensor name
+  std::string factory_name = std::string(tabulate_tensor_function_name);
+  std::string pref = std::string("tabulate_tensor");
+  if ((factory_name.find(pref) == 0) && (factory_name.length() > pref.length())) {
+    factory_name = factory_name.replace(0, pref.length(), std::string(""));
+  }
+
   std::string assembly_kernel_name =
-    std::string("assemble_") + std::string(integral->name);
+    std::string("assemble_") + std::string(factory_name);
   std::string lift_bc_kernel_name =
-    std::string("lift_bc_") + std::string(integral->name);
+    std::string("lift_bc_") + std::string(factory_name);
 
   std::string assembly_kernel_src =
     std::string(tabulate_tensor_src) + "\n"
@@ -1282,7 +1293,7 @@ CUDA::Module compile_form_integral_kernel(
     nvrtc_compiler_options(&num_compile_options, target, debug);
 
   // Compile CUDA C++ code to PTX assembly
-  const char* program_name = integral->name;
+  const char* program_name = factory_name.c_str();
   std::string ptx = CUDA::compile_cuda_cpp_to_ptx(
     program_name, num_program_headers, program_headers,
     program_include_names, num_compile_options, compile_options,
@@ -1304,7 +1315,8 @@ CUDA::Module compile_form_integral_kernel(
 } // namespace
 
 //-----------------------------------------------------------------------------
-CUDAFormIntegral::CUDAFormIntegral()
+template <class T, class U>
+CUDAFormIntegral<T,U>::CUDAFormIntegral()
   : _integral_type()
   , _id()
   , _name()
@@ -1332,10 +1344,11 @@ CUDAFormIntegral::CUDAFormIntegral()
 {
 }
 //-----------------------------------------------------------------------------
-CUDAFormIntegral::CUDAFormIntegral(
+template <class T, class U>
+CUDAFormIntegral<T,U>::CUDAFormIntegral(
   const CUDA::Context& cuda_context,
   CUjit_target target,
-  const Form& form,
+  const Form<T,U>& form,
   IntegralType integral_type, int i,
   int32_t max_threads_per_block,
   int32_t min_blocks_per_multiprocessor,
@@ -1349,7 +1362,9 @@ CUDAFormIntegral::CUDAFormIntegral(
   bool verbose)
   : _integral_type(integral_type)
   , _id(i)
-  , _name(form.integrals().get_ufc_integral(_integral_type, i)->name)
+  // UFCX doesn't provide names
+  // Need to make some changes to get the CUDA code to work. . .
+  //, _name(form.integrals().get_ufc_integral(_integral_type, i)->name)
   , _cudasrcdir(cudasrcdir)
   , _num_vertices_per_cell()
   , _num_coordinates_per_vertex()
@@ -1419,11 +1434,15 @@ CUDAFormIntegral::CUDAFormIntegral(
 #endif
 
   // Allocate device-side storage for mesh entities
-  const FormIntegrals& form_integrals = form.integrals();
-  _mesh_entities = &form.integrals().integral_domains(_integral_type, i);
+  //const FormIntegrals& form_integrals = form.integrals();
+  _mesh_entities = &form.domains(_integral_type, i);
   _num_mesh_entities = _mesh_entities->size();
-  _mesh_ghost_entities = &form.integrals().integral_domain_ghosts(_integral_type, i);
-  _num_mesh_ghost_entities = _mesh_ghost_entities->size();
+  // it's no longer possible to get ghosts from Form
+  // Only from dofmap. . .
+  // So let's ignore them for now, and figure out how we need to handle them
+  //_mesh_ghost_entities = &form.integrals().integral_domain_ghosts(_integral_type, i);
+  //_num_mesh_ghost_entities = _mesh_ghost_entities->size();
+  _num_mesh_ghost_entities = 0;
   if (_num_mesh_entities + _num_mesh_ghost_entities > 0) {
     size_t dmesh_entities_size =
       (_num_mesh_entities + _num_mesh_ghost_entities) * sizeof(int32_t);
@@ -1451,7 +1470,7 @@ CUDAFormIntegral::CUDAFormIntegral(
     }
 
     // Copy mesh ghost entities to device
-    cuda_err = cuMemcpyHtoD(
+    /*cuda_err = cuMemcpyHtoD(
       _dmesh_ghost_entities, _mesh_ghost_entities->data(),
       _num_mesh_ghost_entities * sizeof(int32_t));
     if (cuda_err != CUDA_SUCCESS) {
@@ -1460,7 +1479,7 @@ CUDAFormIntegral::CUDAFormIntegral(
       throw std::runtime_error(
         "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
         " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-    }
+    }*/
   }
 
   // Allocate host- and device-side storage for element vector or
@@ -1485,7 +1504,8 @@ CUDAFormIntegral::CUDAFormIntegral(
   }
 }
 //-----------------------------------------------------------------------------
-CUDAFormIntegral::~CUDAFormIntegral()
+template <class T, class U>
+CUDAFormIntegral<T,U>::~CUDAFormIntegral()
 {
   if (_delement_matrix_rows)
     cuMemFree(_delement_matrix_rows);
@@ -1498,7 +1518,8 @@ CUDAFormIntegral::~CUDAFormIntegral()
     cuMemFree(_dmesh_entities);
 }
 //-----------------------------------------------------------------------------
-CUDAFormIntegral::CUDAFormIntegral(CUDAFormIntegral&& form_integral)
+template <class T, class U>
+CUDAFormIntegral<T,U>::CUDAFormIntegral(CUDAFormIntegral<T,U>&& form_integral)
   : _integral_type(form_integral._integral_type)
   , _id(form_integral._id)
   , _name(form_integral._name)
@@ -1550,7 +1571,8 @@ CUDAFormIntegral::CUDAFormIntegral(CUDAFormIntegral&& form_integral)
   form_integral._lift_bc_kernel = 0;
 }
 //-----------------------------------------------------------------------------
-CUDAFormIntegral& CUDAFormIntegral::operator=(CUDAFormIntegral&& form_integral)
+template <class T, class U>
+CUDAFormIntegral<T,U>& CUDAFormIntegral<T,U>::operator=(CUDAFormIntegral<T,U>&& form_integral)
 {
   _integral_type = form_integral._integral_type;
   _id = form_integral._id;
@@ -1691,16 +1713,17 @@ CUresult launch_cuda_kernel(
     stream, kernel_parameters, extra);
 }
 //-----------------------------------------------------------------------------
+template <class T, class U>
 void assemble_vector_cell(
   const CUDA::Context& cuda_context,
   CUfunction kernel,
   std::int32_t num_active_mesh_entities,
   CUdeviceptr dactive_mesh_entities,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC& bc,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAVector& cuda_vector,
   bool verbose)
 {
@@ -1801,16 +1824,17 @@ void assemble_vector_cell(
   cuda_vector.restore_values_write();
 }
 //-----------------------------------------------------------------------------
+template <class T, class U>
 void assemble_vector_exterior_facet(
   const CUDA::Context& cuda_context,
   CUfunction kernel,
   std::int32_t num_active_mesh_entities,
   CUdeviceptr dactive_mesh_entities,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC& bc,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAVector& cuda_vector,
   bool verbose)
 {
@@ -1845,7 +1869,7 @@ void assemble_vector_exterior_facet(
   (void) cuda_context;
   // Mesh facets
   std::int32_t tdim = mesh.tdim();
-  const dolfinx::mesh::CUDAMeshEntities& facets = mesh.mesh_entities()[tdim-1];
+  const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
   std::int32_t num_mesh_entities = facets.num_mesh_entities();
   std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
   CUdeviceptr dmesh_entities_per_cell = facets.mesh_entities_per_cell();
@@ -1926,13 +1950,14 @@ void assemble_vector_exterior_facet(
   cuda_vector.restore_values_write();
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_vector(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_vector(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC& bc,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAVector& cuda_vector,
   bool verbose) const
 {
@@ -1957,15 +1982,16 @@ void CUDAFormIntegral::assemble_vector(
   }
 }
 //-----------------------------------------------------------------------------
+template <class T, class U>
 void lift_bc_cell(
   const CUDA::Context& cuda_context,
   CUfunction kernel,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   double scale,
   const dolfinx::la::CUDAVector& x0,
   dolfinx::la::CUDAVector& b,
@@ -2071,14 +2097,15 @@ void lift_bc_cell(
   x0.restore_values();
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::lift_bc(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::lift_bc(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   double scale,
   const dolfinx::la::CUDAVector& x0,
   dolfinx::la::CUDAVector& b,
@@ -2100,15 +2127,16 @@ void CUDAFormIntegral::lift_bc(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix_local(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix_local(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAMatrix& A,
   bool verbose)
 {
@@ -2209,7 +2237,8 @@ void CUDAFormIntegral::assemble_matrix_local(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix_local_copy_to_host(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix_local_copy_to_host(
   const CUDA::Context& cuda_context)
 {
   CUresult cuda_err;
@@ -2229,7 +2258,8 @@ void CUDAFormIntegral::assemble_matrix_local_copy_to_host(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix_local_host_global_assembly(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix_local_host_global_assembly(
   const CUDA::Context& cuda_context,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
@@ -2245,31 +2275,30 @@ void CUDAFormIntegral::assemble_matrix_local_host_global_assembly(
   Mat host_A = A.mat();
   const dolfinx::fem::DofMap& host_dofmap0 = *dofmap0.dofmap();
   const dolfinx::fem::DofMap& host_dofmap1 = *dofmap1.dofmap();
-  const graph::AdjacencyList<std::int32_t>& dofs0 = host_dofmap0.list();
-  const graph::AdjacencyList<std::int32_t>& dofs1 = host_dofmap1.list();
   for (int i = 0; i < _num_mesh_entities; i++) {
     std::int32_t c = (*_mesh_entities)[i];
-    auto element_dofs0 = dofs0.links(c);
-    auto element_dofs1 = dofs1.links(c);
+    auto element_dofs0 = host_dofmap0.cell_dofs(c);
+    auto element_dofs1 = host_dofmap1.cell_dofs(c);
     const PetscScalar* Ae = &_element_values[
       i * num_dofs_per_cell0 * num_dofs_per_cell1];
     ierr = MatSetValuesLocal(
       host_A, _num_dofs_per_cell0, element_dofs0.data(),
       _num_dofs_per_cell1, element_dofs1.data(), Ae, ADD_VALUES);
     if (ierr != 0)
-      dolfinx::la::petsc_error(ierr, __FILE__, "MatSetValuesLocal");
+      dolfinx::la::petsc::error(ierr, __FILE__, "MatSetValuesLocal");
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix_global(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix_global(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAMatrix& A,
   bool verbose)
 {
@@ -2388,15 +2417,16 @@ void CUDAFormIntegral::assemble_matrix_global(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix_lookup_table(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix_lookup_table(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAMatrix& A,
   bool verbose)
 {
@@ -2495,15 +2525,16 @@ void CUDAFormIntegral::assemble_matrix_lookup_table(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix_rowwise(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix_rowwise(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAMatrix& A,
   bool verbose)
 {
@@ -2610,15 +2641,16 @@ void CUDAFormIntegral::assemble_matrix_rowwise(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::assemble_matrix(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::assemble_matrix(
   const CUDA::Context& cuda_context,
-  const dolfinx::mesh::CUDAMesh& mesh,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
-  const dolfinx::fem::CUDAFormConstants& constants,
-  const dolfinx::fem::CUDAFormCoefficients& coefficients,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAMatrix& A,
   bool verbose)
 {
@@ -2645,12 +2677,13 @@ void CUDAFormIntegral::assemble_matrix(
   }
 }
 //-----------------------------------------------------------------------------
-void CUDAFormIntegral::compute_lookup_table(
+template <class T, class U>
+void CUDAFormIntegral<T,U>::compute_lookup_table(
   const CUDA::Context& cuda_context,
   const dolfinx::fem::CUDADofMap& dofmap0,
   const dolfinx::fem::CUDADofMap& dofmap1,
-  const dolfinx::fem::CUDADirichletBC& bc0,
-  const dolfinx::fem::CUDADirichletBC& bc1,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
   dolfinx::la::CUDAMatrix& A,
   bool verbose)
 {
@@ -2785,11 +2818,12 @@ void CUDAFormIntegral::compute_lookup_table(
   }
 }
 //-----------------------------------------------------------------------------
-std::map<IntegralType, std::vector<CUDAFormIntegral>>
+template <class T, class U>
+std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>
 dolfinx::fem::cuda_form_integrals(
   const CUDA::Context& cuda_context,
   CUjit_target target,
-  const Form& form,
+  const Form<T,U>& form,
   enum assembly_kernel_type assembly_kernel_type,
   int32_t max_threads_per_block,
   int32_t min_blocks_per_multiprocessor,
@@ -2797,10 +2831,11 @@ dolfinx::fem::cuda_form_integrals(
   const char* cudasrcdir,
   bool verbose)
 {
-  const FormIntegrals& form_integrals = form.integrals();
+  // there is no integrals function
+  //const FormIntegrals& form_integrals = form.integrals();
 
   // Get the number of vertices and coordinates
-  const mesh::Mesh& mesh = *form.mesh();
+  const mesh::Mesh<U>& mesh = *form.mesh();
   std::int32_t num_vertices_per_cell = mesh.geometry().dofmap().num_links(0);
   std::int32_t num_coordinates_per_vertex = mesh.geometry().dim();
 
@@ -2809,21 +2844,21 @@ dolfinx::fem::cuda_form_integrals(
   int32_t num_dofs_per_cell1 = 1;
   if (form.rank() > 0) {
     const DofMap& dofmap0 = *form.function_space(0)->dofmap();
-    num_dofs_per_cell0 = dofmap0.element_dof_layout->num_dofs();
+    num_dofs_per_cell0 = dofmap0.element_dof_layout().num_dofs();
   }
   if (form.rank() > 1) {
     const DofMap& dofmap1 = *form.function_space(1)->dofmap();
-    num_dofs_per_cell1 = dofmap1.element_dof_layout->num_dofs();
+    num_dofs_per_cell1 = dofmap1.element_dof_layout().num_dofs();
   }
-  std::map<IntegralType, std::vector<CUDAFormIntegral>>
+  std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>
     cuda_form_integrals;
 
   {
     // Create device-side kernels and data for cell integrals
     IntegralType integral_type = IntegralType::cell;
-    int num_integrals = form_integrals.num_integrals(integral_type);
+    int num_integrals = form.num_integrals(integral_type);
     if (num_integrals > 0) {
-      std::vector<CUDAFormIntegral>& cuda_cell_integrals =
+      std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals =
         cuda_form_integrals[integral_type];
       for (int i = 0; i < num_integrals; i++) {
         cuda_cell_integrals.emplace_back(
@@ -2841,9 +2876,9 @@ dolfinx::fem::cuda_form_integrals(
   {
     // Create device-side kernels and data for exterior facet integrals
     IntegralType integral_type = IntegralType::exterior_facet;
-    int num_integrals = form_integrals.num_integrals(integral_type);
+    int num_integrals = form.num_integrals(integral_type);
     if (num_integrals > 0) {
-      std::vector<CUDAFormIntegral>& cuda_exterior_facet_integrals =
+      std::vector<CUDAFormIntegral<T,U>>& cuda_exterior_facet_integrals =
         cuda_form_integrals[integral_type];
       for (int i = 0; i < num_integrals; i++) {
         cuda_exterior_facet_integrals.emplace_back(
@@ -2861,9 +2896,9 @@ dolfinx::fem::cuda_form_integrals(
   {
     // Create device-side kernels and data for interior facet integrals
     IntegralType integral_type = IntegralType::interior_facet;
-    int num_integrals = form_integrals.num_integrals(integral_type);
+    int num_integrals = form.num_integrals(integral_type);
     if (num_integrals > 0) {
-      std::vector<CUDAFormIntegral>& cuda_interior_facet_integrals =
+      std::vector<CUDAFormIntegral<T,U>>& cuda_interior_facet_integrals =
         cuda_form_integrals[integral_type];
       for (int i = 0; i < num_integrals; i++) {
         cuda_interior_facet_integrals.emplace_back(

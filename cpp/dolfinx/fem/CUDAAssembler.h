@@ -8,6 +8,11 @@
 
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/mesh/CUDAMesh.h>
+#include <dolfinx/fem/CUDADofMap.h>
+#include <dolfinx/fem/CUDAFormConstants.h>
+#include <dolfinx/fem/CUDAFormCoefficients.h>
+#include <dolfinx/fem/CUDAFormIntegral.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -35,10 +40,6 @@ namespace function
 class FunctionSpace;
 }
 
-namespace mesh
-{
-class CUDAMesh;
-};
 
 namespace la
 {
@@ -48,12 +49,6 @@ class CUDAVector;
 
 namespace fem
 {
-class CUDADirichletBC;
-class CUDADofMap;
-class CUDAFormIntegral;
-class CUDAFormConstants;
-class CUDAFormCoefficients;
-class DirichletBC;
 
 #if defined(HAS_CUDA_TOOLKIT)
 /// Interface for GPU-accelerated assembly of variational forms.
@@ -111,9 +106,11 @@ public:
   ///
   /// @param[in] cuda_context A context for a CUDA device
   /// @param[in] coefficients Device-side data for form coefficients
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void pack_coefficients(
     const CUDA::Context& cuda_context,
-    dolfinx::fem::CUDAFormCoefficients& coefficients,
+    dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     bool verbose) const;
 
   /// Assemble linear form into a vector. The vector must already be
@@ -130,14 +127,16 @@ public:
   /// @param[in] constants Device-side data for form constants
   /// @param[in] coefficients Device-side data for form coefficients
   /// @param[in,out] b The device-side vector to assemble the form into
-  void assemble_vector(
+    template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
+    void assemble_vector(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap,
-    const dolfinx::fem::CUDADirichletBC& bc,
-    const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+    const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAVector& b,
     bool verbose) const;
 
@@ -158,9 +157,11 @@ public:
   /// @param[in] x0 A device-side vector
   /// @param[in] scale Scaling factor
   /// @param[in,out] b The device-side vector to modify
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void set_bc(
     const CUDA::Context& cuda_context,
-    const dolfinx::fem::CUDADirichletBC& bcs,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bcs,
     const dolfinx::la::CUDAVector& x0,
     double scale,
     dolfinx::la::CUDAVector& b) const;
@@ -196,15 +197,17 @@ public:
   /// @param[in] x0 A device-side vector
   /// @param[in] scale Scaling factor
   /// @param[in,out] b The device-side vector to modify
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void lift_bc(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
-    const dolfinx::fem::CUDADirichletBC& bcs1,
+    const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bcs1,
     const dolfinx::la::CUDAVector& x0,
     double scale,
     dolfinx::la::CUDAVector& b,
@@ -242,15 +245,17 @@ public:
   /// @param[in] x0 A device-side vector
   /// @param[in] scale Scaling factor
   /// @param[in,out] b The device-side vector to modify
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void apply_lifting(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const std::vector<const dolfinx::fem::CUDADofMap*>& dofmap1,
-    const std::vector<const std::map<IntegralType, std::vector<CUDAFormIntegral>>*>& form_integrals,
-    const std::vector<const dolfinx::fem::CUDAFormConstants*>& constants,
-    const std::vector<const dolfinx::fem::CUDAFormCoefficients*>& coefficients,
-    const std::vector<const dolfinx::fem::CUDADirichletBC*>& bcs1,
+    const std::vector<const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>*>& form_integrals,
+    const std::vector<const dolfinx::fem::CUDAFormConstants<T>*>& constants,
+    const std::vector<const dolfinx::fem::CUDAFormCoefficients<T,U>*>& coefficients,
+    const std::vector<const dolfinx::fem::CUDADirichletBC<T,U>*>& bcs1,
     const std::vector<const dolfinx::la::CUDAVector*>& x0,
     double scale,
     dolfinx::la::CUDAVector& b,
@@ -277,16 +282,18 @@ public:
   ///                  store the assembled form. The matrix must be
   ///                  initialised before calling this function. The
   ///                  matrix is not zeroed.
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void assemble_matrix(
     const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh& mesh,
+    const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
-    const dolfinx::fem::CUDAFormConstants& constants,
-    const dolfinx::fem::CUDAFormCoefficients& coefficients,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+    const dolfinx::fem::CUDAFormConstants<T>& constants,
+    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
     bool verbose) const;
 
@@ -295,9 +302,11 @@ public:
   /// @param[in] cuda_context A context for a CUDA device
   /// @param[in] form_integrals Device-side kernels and data for each
   ///                           integral of the variational form
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void assemble_matrix_local_copy_to_host(
     const CUDA::Context& cuda_context,
-    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals) const;
+    std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals) const;
 
   /// Perform global assembly on the host.
   ///
@@ -312,11 +321,13 @@ public:
   ///                  store the assembled form. The matrix must be
   ///                  initialised before calling this function. The
   ///                  matrix is not zeroed.
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void assemble_matrix_local_host_global_assembly(
     const CUDA::Context& cuda_context,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
+    std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
     dolfinx::la::CUDAMatrix& A) const;
 
   /// Adds a value to the diagonal entries of a matrix that belong to
@@ -335,21 +346,25 @@ public:
   /// @param[in] bc The Dirichlet boundary condtions
   /// @param[in] diagonal The value to add to the diagonal for rows with a
   ///                     boundary condition applied
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void add_diagonal(
     const CUDA::Context& cuda_context,
     dolfinx::la::CUDAMatrix& A,
-    const dolfinx::fem::CUDADirichletBC& bc,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc,
     double diagonal = 1.0) const;
 
   /// Compute lookup tables that are used during matrix assembly for
   /// kernels that need it
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void compute_lookup_tables(
     const CUDA::Context& cuda_context,
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
-    const dolfinx::fem::CUDADirichletBC& bc0,
-    const dolfinx::fem::CUDADirichletBC& bc1,
-    std::map<IntegralType, std::vector<CUDAFormIntegral>>& form_integrals,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc0,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
+    std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
     dolfinx::la::CUDAMatrix& A,
     bool verbose) const;
 

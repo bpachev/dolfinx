@@ -18,6 +18,10 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/Topology.h>
+#if defined(HAS_CUDA_TOOLKIT)
+#include <dolfinx/common/CUDA.h>
+#endif
+
 #include <map>
 #include <memory>
 #include <vector>
