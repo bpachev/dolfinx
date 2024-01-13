@@ -108,6 +108,7 @@
 
 #include <utility>
 #include <vector>
+#include <iostream>
 
 using namespace dolfinx;
 using T = PetscScalar;
@@ -132,6 +133,16 @@ int main(int argc, char* argv[])
 {
   dolfinx::init_logging(argc, argv);
   PetscInitialize(&argc, &argv, nullptr, nullptr);
+#ifdef HAS_CUDA_TOOLKIT  
+  std::cout << "Initializing CUDA driver API";
+  CUresult cuda_err = cuInit(0);
+  if (cuda_err != CUDA_SUCCESS) {
+    const char * cuda_err_description;
+    cuGetErrorString(cuda_err, &cuda_err_description);
+    std::cout << "cuInit() failed with " << cuda_err_description;
+    return cuda_err;
+  }
+#endif
 
   {
 #if defined(HAS_CUDA_TOOLKIT)

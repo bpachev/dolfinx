@@ -61,3 +61,11 @@ bool dolfinx::has_adios2()
 #endif
 }
 //-------------------------------------------------------------------------
+bool dolfinx::has_cuda_toolkit()
+{
+#ifdef HAS_CUDA_TOOLKIT
+  return true;
+#else
+  return false;
+#endif
+}

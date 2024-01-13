@@ -20,6 +20,7 @@
 #include <dolfinx/mesh/Topology.h>
 #if defined(HAS_CUDA_TOOLKIT)
 #include <dolfinx/common/CUDA.h>
+#include <dolfinx/fem/CUDADofMap.h>
 #endif
 
 #include <map>
@@ -320,6 +321,16 @@ public:
   /// The dofmap
   std::shared_ptr<const DofMap> dofmap() const { return _dofmap; }
 
+#if defined(HAS_CUDA_TOOLKIT)
+  /// Create a device-side dofmap
+  /// @param[in] cuda_context A context for a CUDA device
+  void create_cuda_dofmap(const CUDA::Context& cuda_context);
+
+  /// Device-side dofmap
+  std::shared_ptr<const fem::CUDADofMap> cuda_dofmap() const;
+#endif
+
+
 private:
   // The mesh
   std::shared_ptr<const mesh::Mesh<geometry_type>> _mesh;
@@ -329,6 +340,11 @@ private:
 
   // The dofmap
   std::shared_ptr<const DofMap> _dofmap;
+
+#if defined(HAS_CUDA_TOOLKIT)
+  // Device-side dofmap
+  std::shared_ptr<const fem::CUDADofMap> _cuda_dofmap;
+#endif
 
   // The component w.r.t. to root space
   std::vector<int> _component;

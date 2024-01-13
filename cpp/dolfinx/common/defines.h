@@ -40,4 +40,6 @@ bool has_kahip();
 /// Return true if DOLFINX is compiled with ADIOS2
 bool has_adios2();
 
+/// Return true if DOLFINX is compiled with CUDA Toolkit
+bool has_cuda_toolkit();
 } // namespace dolfinx
