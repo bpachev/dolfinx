@@ -260,23 +260,32 @@ int main(int argc, char* argv[])
     la::Vector<T> b(L->function_spaces()[0]->dofmap()->index_map,
                     L->function_spaces()[0]->dofmap()->index_map_bs());
 #if defined(HAS_CUDA_TOOLKIT)
+
+    // for now hardcode target to be Ampere
+    CUjit_target cujit_target = CU_TARGET_COMPUTE_80;
     dolfinx::fem::CUDAAssembler assembler(
-    cuda_context, true, "poisson_demo_cudasrcdir", false);
+    cuda_context, cujit_target, true, "poisson_demo_cudasrcdir", false);
     dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *mesh);
     V->create_cuda_dofmap(cuda_context);
     std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
-    a->function_space(0)->cuda_dofmap();
+    a->function_spaces()[0]->cuda_dofmap();
     std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap1 =
-    a->function_space(1)->cuda_dofmap();
+    a->function_spaces()[1]->cuda_dofmap();
+    std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs;
+    bcs.emplace_back(bc);
+
     dolfinx::fem::CUDADirichletBC<T,U> cuda_bc0(
-    cuda_context, *a->function_space(0), bc);
+    cuda_context, *a->function_spaces()[0], bcs);
     dolfinx::fem::CUDADirichletBC<T,U> cuda_bc1(
-    cuda_context, *a->function_space(1), bc);
+    cuda_context, *a->function_spaces()[1], bcs);
+    int max_threads_per_block = 1024;
+    int min_blocks_per_sm = 1;
+
     std::map<dolfinx::fem::IntegralType,
            std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
     cuda_a_form_integrals = cuda_form_integrals(
-      cuda_context, *a, dolfinx::fem::ASSEMBLY_KERNEL_LOOKUP_TABLE,
-      false, NULL, false);
+      cuda_context, cujit_target, *a, dolfinx::fem::ASSEMBLY_KERNEL_LOOKUP_TABLE,
+      max_threads_per_block, min_blocks_per_sm, true, NULL, true);
     dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
     cuda_context, a.get());
     dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
@@ -309,35 +318,44 @@ int main(int argc, char* argv[])
 #endif
 
 #if defined(HAS_CUDA_TOOLKIT)
-    std::map<dolfinx::fem::FormIntegrals::Type,
-           std::vector<dolfinx::fem::CUDAFormIntegral>>
+    std::map<dolfinx::fem::IntegralType,
+           std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
     cuda_L_form_integrals_ = cuda_form_integrals(
-      cuda_context, *L, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
-      false, NULL, false);
+      cuda_context, cujit_target, *L, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
+      max_threads_per_block, min_blocks_per_sm, false, NULL, false);
     dolfinx::fem::CUDAFormConstants<T> cuda_L_form_constants(
     cuda_context, L.get());
     dolfinx::fem::CUDAFormCoefficients<T,U> cuda_L_form_coefficients(
     cuda_context, L.get());
     assembler.pack_coefficients(
       cuda_context, cuda_L_form_coefficients, false);
-    la::PETScVector x0(*a->function_space(1)->dofmap()->index_map);
+    la::petsc::Vector x0(*a->function_spaces()[1]->dofmap()->index_map,
+		    a->function_spaces()[1]->dofmap()->index_map_bs());
     dolfinx::la::CUDAVector cuda_x0(cuda_context, x0.vec());
-    dolfinx::la::CUDAVector cuda_b(cuda_context, b.vec());
+    dolfinx::la::CUDAVector cuda_b(cuda_context, la::petsc::create_vector_wrap(b));
     assembler.zero_vector_entries(cuda_context, cuda_x0);
     assembler.zero_vector_entries(cuda_context, cuda_b);
     cuda_b.copy_vector_values_to_host(cuda_context);
-    cuda_b.update_ghosts();
+    //cuda_b.update_ghosts();
     assembler.assemble_vector(
         cuda_context, cuda_mesh, *cuda_dofmap0, cuda_bc0,
         cuda_L_form_integrals_, cuda_L_form_constants,
         cuda_L_form_coefficients, cuda_b, false);
+    const std::vector<const dolfinx::fem::CUDADofMap *> dofmap1 = {cuda_dofmap1.get()};
+    const std::vector<const std::map<dolfinx::fem::IntegralType, std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>*> 
+	    cuda_a_form_integrals_list = {&cuda_a_form_integrals};
+    const std::vector<const dolfinx::fem::CUDAFormConstants<T>*> cuda_a_form_constants_list = {&cuda_a_form_constants};
+    const std::vector<const dolfinx::fem::CUDAFormCoefficients<T,U>*> cuda_a_form_coefficients_list = {&cuda_a_form_coefficients};
+    const std::vector<const dolfinx::fem::CUDADirichletBC<T,U>*> cuda_bc1_list = {&cuda_bc1};
+    const std::vector<const dolfinx::la::CUDAVector*> cuda_x0_list = {&cuda_x0};
+
     assembler.apply_lifting(
         cuda_context, cuda_mesh, *cuda_dofmap0,
-        {cuda_dofmap1.get()}, {&cuda_a_form_integrals}, {&cuda_a_form_constants},
-        {&cuda_a_form_coefficients},
-        {&cuda_bc1}, {&cuda_x0}, 1.0, cuda_b, false);
+        dofmap1, cuda_a_form_integrals_list, cuda_a_form_constants_list,
+        cuda_a_form_coefficients_list,
+        cuda_bc1_list, cuda_x0_list, 1.0, cuda_b, false);
     cuda_b.copy_vector_values_to_host(cuda_context);
-    cuda_b.apply_ghosts();
+    //cuda_b.apply_ghosts();
     assembler.set_bc(cuda_context, cuda_bc0, cuda_x0, 1.0, cuda_b);
 #else
     b.set(0.0);

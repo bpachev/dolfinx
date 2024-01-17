@@ -43,10 +43,20 @@ add_custom_command(
   COMMENT "Compile poisson.py using FFCx"
 )
 
+# hack to get CUDA test case to work
+find_package(CUDAToolkit)
+
+
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 add_executable(${PROJECT_NAME} main.cpp ${CMAKE_CURRENT_BINARY_DIR}/poisson.c)
 target_link_libraries(${PROJECT_NAME} dolfinx)
+if (CUDAToolkit_FOUND)
+	target_compile_definitions(${PROJECT_NAME} PUBLIC HAS_CUDA_TOOLKIT)
+	target_link_libraries(${PROJECT_NAME} CUDA::cuda_driver CUDA::nvrtc CUDA::cupti)
+	target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+endif()
 
 # Do not throw error for 'multi-line comments' (these are typical in rst which
 # includes LaTeX)

@@ -81,7 +81,7 @@ public:
       : _function_space(V),
         _x(std::make_shared<la::Vector<value_type>>(
             V->dofmap()->index_map, V->dofmap()->index_map_bs())),
-	_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(cuda_context, _x.vec()))
+	_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(cuda_context, _x))
   {
     if (!V->component().empty())
     {
@@ -185,7 +185,7 @@ public:
     // Check that this is not a sub function.
     assert(_function_space->dofmap());
     assert(_function_space->dofmap()->index_map);
-    if (_x.size()
+    if (_x->bs() * _x->index_map()->size_global()
         != _function_space->dofmap()->index_map->size_global()
                * _function_space->dofmap()->index_map_bs())
     {
@@ -195,7 +195,7 @@ public:
 
     if (!_cuda_vector) {
       _cuda_vector = std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, _x.vec());
+        cuda_context, _x);
     }
     return *_cuda_vector.get();
   }
@@ -206,7 +206,7 @@ public:
   {
     if (!_cuda_vector) {
       _cuda_vector = std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, _x.vec());
+        cuda_context, _x);
     }
     return *_cuda_vector.get();
   }
