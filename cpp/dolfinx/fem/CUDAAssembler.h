@@ -8,11 +8,18 @@
 
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/Function.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/mesh/CUDAMesh.h>
 #include <dolfinx/fem/CUDADofMap.h>
 #include <dolfinx/fem/CUDAFormConstants.h>
 #include <dolfinx/fem/CUDAFormCoefficients.h>
 #include <dolfinx/fem/CUDAFormIntegral.h>
+#include <dolfinx/fem/CUDADirichletBC.h>
+#include <dolfinx/fem/CUDADofMap.h>
+#include <dolfinx/la/CUDAMatrix.h>
+#include <dolfinx/la/CUDASeqMatrix.h>
+#include <dolfinx/la/CUDAVector.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
@@ -102,6 +109,10 @@ public:
     const CUDA::Context& cuda_context,
     dolfinx::la::CUDAVector& x) const;
 
+
+
+
+  //-----------------------------------------------------------------------------
   /// Pack coefficient values for a form.
   ///
   /// @param[in] cuda_context A context for a CUDA device
@@ -111,8 +122,114 @@ public:
   void pack_coefficients(
     const CUDA::Context& cuda_context,
     dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
-    bool verbose) const;
+    bool verbose) const
+  {
+    CUresult cuda_err;
+    const char * cuda_err_description;
 
+    {
+        std::int32_t num_coefficients = coefficients.num_coefficients();
+        const std::vector<std::shared_ptr<const Function<T, U>>>& _coefficients = coefficients.coefficients();
+        CUdeviceptr dcoefficient_values = coefficients.coefficient_values();
+
+        std::vector<CUdeviceptr> coefficient_values(num_coefficients);
+        for (int i = 0; i < num_coefficients; i++) {
+            const la::CUDAVector& cuda_x = _coefficients[i]->cuda_vector(cuda_context);
+            coefficient_values[i] = cuda_x.values();
+        }
+        size_t coefficient_values_size = num_coefficients * sizeof(CUdeviceptr);
+        cuda_err = cuMemcpyHtoD(
+            dcoefficient_values, coefficient_values.data(), coefficient_values_size);
+        if (cuda_err != CUDA_SUCCESS) {
+            cuGetErrorString(cuda_err, &cuda_err_description);
+            throw std::runtime_error(
+                "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
+                " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+        }
+    }
+
+    // Fetch the device-side kernel
+    CUfunction kernel = _util_module.get_device_function(
+      "pack_coefficients");
+
+    int min_grid_size;
+    int block_size;
+    int shared_mem_size_per_thread_block;
+    cuda_err = cuOccupancyMaxPotentialBlockSize(
+      &min_grid_size, &block_size, kernel, 0, 0, 0);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuOccupancyMaxPotentialBlockSize() failed with " +
+        std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    unsigned int grid_dim_x = min_grid_size;
+    unsigned int grid_dim_y = 1;
+    unsigned int grid_dim_z = 1;
+    unsigned int block_dim_x = block_size;
+    unsigned int block_dim_y = 1;
+    unsigned int block_dim_z = 1;
+    unsigned int grid_size =
+      grid_dim_x * grid_dim_y * grid_dim_z;
+    unsigned int num_threads_per_block =
+      block_dim_x * block_dim_y * block_dim_z;
+    unsigned int num_threads =
+      grid_size * num_threads_per_block;
+    CUstream stream = NULL;
+
+    // Launch device-side kernel
+    (void) cuda_context;
+    CUdeviceptr dofmaps_num_dofs_per_cell = coefficients.dofmaps_num_dofs_per_cell();
+    CUdeviceptr dofmaps_dofs_per_cell = coefficients.dofmaps_dofs_per_cell();
+    CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
+    std::int32_t num_coefficients = coefficients.num_coefficients();
+    CUdeviceptr coefficient_values = coefficients.coefficient_values();
+    std::int32_t num_cells = coefficients.num_cells();
+    std::int32_t num_packed_coefficient_values_per_cell =
+      coefficients.num_packed_coefficient_values_per_cell();
+    CUdeviceptr packed_coefficient_values = coefficients.packed_coefficient_values();
+    void * kernel_parameters[] = {
+        &num_coefficients,
+        &dofmaps_num_dofs_per_cell,
+        &dofmaps_dofs_per_cell,
+        &coefficient_values_offsets,
+        &coefficient_values,
+        &num_cells,
+        &num_packed_coefficient_values_per_cell,
+        &packed_coefficient_values};
+
+    cuda_err = cuLaunchKernel(
+      kernel, grid_dim_x, grid_dim_y, grid_dim_z,
+      block_dim_x, block_dim_y, block_dim_z,
+      shared_mem_size_per_thread_block,
+      stream, kernel_parameters, NULL);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuLaunchKernel() failed with " + std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    // Wait for the kernel to finish.
+    cuda_err = cuCtxSynchronize();
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuCtxSynchronize() failed with " + std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    {
+        auto _coefficients = coefficients.coefficients();
+        for (int i = 0; i < num_coefficients; i++) {
+            const la::CUDAVector& cuda_x = _coefficients[i]->cuda_vector(cuda_context);
+            cuda_x.restore_values();
+        }
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Assemble linear form into a vector. The vector must already be
   /// initialised. Does not zero vector and ghost contributions are
   /// not accumulated (sent to owner). Caller is responsible for
@@ -127,19 +244,65 @@ public:
   /// @param[in] constants Device-side data for form constants
   /// @param[in] coefficients Device-side data for form coefficients
   /// @param[in,out] b The device-side vector to assemble the form into
-    template <dolfinx::scalar T,
-          std::floating_point U = dolfinx::scalar_value_type_t<T>>
-    void assemble_vector(
-    const CUDA::Context& cuda_context,
-    const dolfinx::mesh::CUDAMesh<U>& mesh,
-    const dolfinx::fem::CUDADofMap& dofmap,
-    const dolfinx::fem::CUDADirichletBC<T,U>& bc,
-    const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
-    const dolfinx::fem::CUDAFormConstants<T>& constants,
-    const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
-    dolfinx::la::CUDAVector& b,
-    bool verbose) const;
+  template <dolfinx::scalar T,
+        std::floating_point U = dolfinx::scalar_value_type_t<T>>
+  void assemble_vector(
+  const CUDA::Context& cuda_context,
+  const dolfinx::mesh::CUDAMesh<U>& mesh,
+  const dolfinx::fem::CUDADofMap& dofmap,
+  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+  const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
+  const dolfinx::fem::CUDAFormConstants<T>& constants,
+  const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
+  dolfinx::la::CUDAVector& b,
+  bool verbose) const
+  {
+    {
+      // Perform assembly for cell integrals
+      auto it = form_integrals.find(IntegralType::cell);
+      if (it != form_integrals.end()) {
+        const std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
+        for (auto const& cuda_cell_integral : cuda_cell_integrals) {
+          cuda_cell_integral.assemble_vector(
+            cuda_context, mesh, dofmap, bc,
+            constants, coefficients, b, verbose);
+        }
+      }
+    }
 
+    {
+      // Perform assembly for exterior facet integrals
+      auto it = form_integrals.find(IntegralType::exterior_facet);
+      if (it != form_integrals.end()) {
+        const std::vector<CUDAFormIntegral<T,U>>&
+          cuda_exterior_facet_integrals = it->second;
+        for (auto const& cuda_exterior_facet_integral :
+               cuda_exterior_facet_integrals)
+        {
+          cuda_exterior_facet_integral.assemble_vector(
+            cuda_context, mesh, dofmap, bc,
+            constants, coefficients, b, verbose);
+        }
+      }
+    }
+
+    {
+      // Perform assembly for interior facet integrals
+      auto it = form_integrals.find(IntegralType::interior_facet);
+      if (it != form_integrals.end()) {
+        const std::vector<CUDAFormIntegral<T,U>>&
+          cuda_interior_facet_integrals = it->second;
+        for (auto const& cuda_interior_facet_integral :
+               cuda_interior_facet_integrals)
+        {
+          cuda_interior_facet_integral.assemble_vector(
+            cuda_context, mesh, dofmap, bc,
+            constants, coefficients, b, verbose);
+        }
+      }
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Apply Dirichlet boundary conditions to a vector.
   ///
   /// For points where the given boundary conditions apply, the value
@@ -161,11 +324,90 @@ public:
           std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void set_bc(
     const CUDA::Context& cuda_context,
-    const dolfinx::fem::CUDADirichletBC<T,U>& bcs,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc,
     const dolfinx::la::CUDAVector& x0,
     double scale,
-    dolfinx::la::CUDAVector& b) const;
+    dolfinx::la::CUDAVector& b) const
+  {
+    CUresult cuda_err;
+    const char * cuda_err_description;
 
+    // Fetch the device-side kernel
+    CUfunction kernel = _util_module.get_device_function(
+      "set_bc");
+
+    // Compute a block size with high occupancy
+    int min_grid_size;
+    int block_size;
+    int shared_mem_size_per_thread_block;
+    cuda_err = cuOccupancyMaxPotentialBlockSize(
+      &min_grid_size, &block_size, kernel, 0, 0, 0);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuOccupancyMaxPotentialBlockSize() failed with " +
+        std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    unsigned int grid_dim_x = min_grid_size;
+    unsigned int grid_dim_y = 1;
+    unsigned int grid_dim_z = 1;
+    unsigned int block_dim_x = block_size;
+    unsigned int block_dim_y = 1;
+    unsigned int block_dim_z = 1;
+    unsigned int grid_size =
+      grid_dim_x * grid_dim_y * grid_dim_z;
+    unsigned int num_threads_per_block =
+      block_dim_x * block_dim_y * block_dim_z;
+    unsigned int num_threads =
+      grid_size * num_threads_per_block;
+    CUstream stream = NULL;
+
+    // Launch device-side kernel
+    (void) cuda_context;
+    std::int32_t num_boundary_dofs = bc.num_boundary_dofs();
+    CUdeviceptr dboundary_dofs = bc.dof_indices();
+    CUdeviceptr dboundary_value_dofs = bc.dof_value_indices();
+    CUdeviceptr dboundary_values = bc.dof_values();
+    CUdeviceptr dx0 = x0.values();
+    std::int32_t num_values =
+        b.ghosted() ? b.num_local_ghosted_values() : b.num_local_values();
+    CUdeviceptr dvalues = b.values_write();
+    void * kernel_parameters[] = {
+      &num_boundary_dofs,
+      &dboundary_dofs,
+      &dboundary_value_dofs,
+      &dboundary_values,
+      &dx0,
+      &scale,
+      &num_values,
+      &dvalues};
+    cuda_err = cuLaunchKernel(
+      kernel, grid_dim_x, grid_dim_y, grid_dim_z,
+      block_dim_x, block_dim_y, block_dim_z,
+      shared_mem_size_per_thread_block,
+      stream, kernel_parameters, NULL);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuLaunchKernel() failed with " + std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    // Wait for the kernel to finish.
+    cuda_err = cuCtxSynchronize();
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuCtxSynchronize() failed with " + std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    b.restore_values_write();
+    x0.restore_values();
+  }
+  //-----------------------------------------------------------------------------
   /// Modify a right-hand side vector `b` to account for essential
   /// boundary conditions,
   ///
@@ -207,12 +449,39 @@ public:
     const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
     const dolfinx::fem::CUDAFormConstants<T>& constants,
     const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
-    const dolfinx::fem::CUDADirichletBC<T,U>& bcs1,
+    const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
     const dolfinx::la::CUDAVector& x0,
     double scale,
     dolfinx::la::CUDAVector& b,
-    bool verbose) const;
+    bool verbose) const
+  {
+    {
+      // Apply boundary conditions for cell integrals
+      auto it = form_integrals.find(IntegralType::cell);
+      if (it != form_integrals.end()) {
+        const std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
+        auto const& cuda_cell_integral = cuda_cell_integrals.at(0);
+        cuda_cell_integral.lift_bc(
+          cuda_context, mesh, dofmap0, dofmap1, bc1,
+          constants, coefficients, scale, x0, b, verbose);
+      }
+    }
 
+    {
+      // Apply boundary conditions for exterior facet integrals
+      auto it = form_integrals.find(IntegralType::exterior_facet);
+      if (it != form_integrals.end()) {
+        const std::vector<CUDAFormIntegral<T,U>>& cuda_exterior_facet_integrals =
+          it->second;
+        auto const& cuda_exterior_facet_integral =
+          cuda_exterior_facet_integrals.at(0);
+        cuda_exterior_facet_integral.lift_bc(
+          cuda_context, mesh, dofmap0, dofmap1, bc1,
+          constants, coefficients, scale, x0, b, verbose);
+      }
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Modify a right-hand side vector `b` to account for essential
   /// boundary conditions,
   ///
@@ -259,8 +528,15 @@ public:
     const std::vector<const dolfinx::la::CUDAVector*>& x0,
     double scale,
     dolfinx::la::CUDAVector& b,
-    bool verbose) const;
-
+    bool verbose) const
+  {
+    for (int i = 0; i < form_integrals.size(); i++) {
+      lift_bc(cuda_context, mesh, dofmap0, *dofmap1[i],
+              *form_integrals[i], *constants[i], *coefficients[i],
+              *bcs1[i], *x0[i], scale, b, verbose);
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Assemble bilinear form into a matrix. Matrix must already be
   /// initialised. Does not zero or finalise the matrix.
   ///
@@ -295,8 +571,54 @@ public:
     const dolfinx::fem::CUDAFormConstants<T>& constants,
     const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
-    bool verbose) const;
+    bool verbose) const
+  {
+    {
+      // Perform assembly for cell integrals
+      auto it = form_integrals.find(IntegralType::cell);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
+        for (auto & cuda_cell_integral : cuda_cell_integrals) {
+          cuda_cell_integral.assemble_matrix(
+            cuda_context, mesh, dofmap0, dofmap1, bc0, bc1,
+            constants, coefficients, A, verbose);
+        }
+      }
+    }
 
+    {
+      // Perform assembly for exterior facet integrals
+      auto it = form_integrals.find(IntegralType::exterior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>&
+          cuda_exterior_facet_integrals = it->second;
+        for (auto & cuda_exterior_facet_integral :
+               cuda_exterior_facet_integrals)
+        {
+          cuda_exterior_facet_integral.assemble_matrix(
+            cuda_context, mesh, dofmap0, dofmap1, bc0, bc1,
+            constants, coefficients, A, verbose);
+        }
+      }
+    }
+
+    {
+      // Perform assembly for interior facet integrals
+      auto it = form_integrals.find(IntegralType::interior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>&
+          cuda_interior_facet_integrals = it->second;
+        for (auto & cuda_interior_facet_integral :
+               cuda_interior_facet_integrals)
+        {
+          cuda_interior_facet_integral.assemble_matrix(
+            cuda_context, mesh, dofmap0, dofmap1, bc0, bc1,
+            constants, coefficients, A, verbose);
+        }
+      }
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Copy element matrices from CUDA device memory to host memory.
   ///
   /// @param[in] cuda_context A context for a CUDA device
@@ -306,8 +628,51 @@ public:
           std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void assemble_matrix_local_copy_to_host(
     const CUDA::Context& cuda_context,
-    std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals) const;
+    std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals) const
+  {
+    {
+      // Perform assembly for cell integrals
+      auto it = form_integrals.find(IntegralType::cell);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
+        for (auto & cuda_cell_integral : cuda_cell_integrals) {
+          cuda_cell_integral.assemble_matrix_local_copy_to_host(
+            cuda_context);
+        }
+      }
+    }
 
+    {
+      // Perform assembly for exterior facet integrals
+      auto it = form_integrals.find(IntegralType::exterior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>&
+          cuda_exterior_facet_integrals = it->second;
+        for (auto & cuda_exterior_facet_integral :
+               cuda_exterior_facet_integrals)
+        {
+          cuda_exterior_facet_integral.assemble_matrix_local_copy_to_host(
+            cuda_context);
+        }
+      }
+    }
+
+    {
+      // Perform assembly for interior facet integrals
+      auto it = form_integrals.find(IntegralType::interior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>&
+          cuda_interior_facet_integrals = it->second;
+        for (auto & cuda_interior_facet_integral :
+               cuda_interior_facet_integrals)
+        {
+          cuda_interior_facet_integral.assemble_matrix_local_copy_to_host(
+            cuda_context);
+        }
+      }
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Perform global assembly on the host.
   ///
   /// @param[in] cuda_context A context for a CUDA device
@@ -328,8 +693,52 @@ public:
     const dolfinx::fem::CUDADofMap& dofmap0,
     const dolfinx::fem::CUDADofMap& dofmap1,
     std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
-    dolfinx::la::CUDAMatrix& A) const;
+    dolfinx::la::CUDAMatrix& A) const
+  {
+    {
+      // Perform assembly for cell integrals
+      auto it = form_integrals.find(IntegralType::cell);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
+        for (auto & cuda_cell_integral : cuda_cell_integrals) {
+          cuda_cell_integral.assemble_matrix_local_host_global_assembly(
+            cuda_context, dofmap0, dofmap1, A);
+        }
+      }
+    }
 
+    {
+      // Perform assembly for exterior facet integrals
+      auto it = form_integrals.find(IntegralType::exterior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>&
+          cuda_exterior_facet_integrals = it->second;
+        for (auto & cuda_exterior_facet_integral :
+               cuda_exterior_facet_integrals)
+        {
+          cuda_exterior_facet_integral.assemble_matrix_local_host_global_assembly(
+            cuda_context, dofmap0, dofmap1, A);
+        }
+      }
+    }
+
+    {
+      // Perform assembly for interior facet integrals
+      auto it = form_integrals.find(IntegralType::interior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>&
+          cuda_interior_facet_integrals = it->second;
+        for (auto & cuda_interior_facet_integral :
+               cuda_interior_facet_integrals)
+        {
+          cuda_interior_facet_integral.assemble_matrix_local_host_global_assembly(
+            cuda_context, dofmap0, dofmap1, A);
+        }
+      }
+    }
+  }
+
+  //-----------------------------------------------------------------------------
   /// Adds a value to the diagonal entries of a matrix that belong to
   /// rows where a Dirichlet boundary condition applies. This function
   /// is typically called after assembly. The assembly function does
@@ -352,8 +761,82 @@ public:
     const CUDA::Context& cuda_context,
     dolfinx::la::CUDAMatrix& A,
     const dolfinx::fem::CUDADirichletBC<T,U>& bc,
-    double diagonal = 1.0) const;
+    double diagonal = 1.0) const
+  {
+    CUresult cuda_err;
+    const char * cuda_err_description;
 
+    // Fetch the device-side kernel
+    CUfunction kernel = _util_module.get_device_function(
+      "add_diagonal");
+
+    // Compute a block size with high occupancy
+    int min_grid_size;
+    int block_size;
+    int shared_mem_size_per_thread_block;
+    cuda_err = cuOccupancyMaxPotentialBlockSize(
+      &min_grid_size, &block_size, kernel, 0, 0, 0);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuOccupancyMaxPotentialBlockSize() failed with " +
+        std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    unsigned int grid_dim_x = min_grid_size;
+    unsigned int grid_dim_y = 1;
+    unsigned int grid_dim_z = 1;
+    unsigned int block_dim_x = block_size;
+    unsigned int block_dim_y = 1;
+    unsigned int block_dim_z = 1;
+    unsigned int grid_size =
+      grid_dim_x * grid_dim_y * grid_dim_z;
+    unsigned int num_threads_per_block =
+      block_dim_x * block_dim_y * block_dim_z;
+    unsigned int num_threads =
+      grid_size * num_threads_per_block;
+    CUstream stream = NULL;
+
+    // Launch device-side kernel
+
+    (void) cuda_context;
+    std::int32_t num_diagonals = bc.num_owned_boundary_dofs();
+    CUdeviceptr ddiagonals = bc.dof_indices();
+    std::int32_t num_rows = A.diag()->num_rows();
+    CUdeviceptr drow_ptr = A.diag()->row_ptr();
+    CUdeviceptr dcolumn_indices = A.diag()->column_indices();
+    CUdeviceptr dvalues = A.diag()->values();
+    void * kernel_parameters[] = {
+      &num_diagonals,
+      &ddiagonals,
+      &diagonal,
+      &num_rows,
+      &drow_ptr,
+      &dcolumn_indices,
+      &dvalues};
+    cuda_err = cuLaunchKernel(
+      kernel, grid_dim_x, grid_dim_y, grid_dim_z,
+      block_dim_x, block_dim_y, block_dim_z,
+      shared_mem_size_per_thread_block,
+      stream, kernel_parameters, NULL);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuLaunchKernel() failed with " + std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+
+    // Wait for the kernel to finish.
+    cuda_err = cuCtxSynchronize();
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuCtxSynchronize() failed with " + std::string(cuda_err_description) +
+        " at " + __FILE__ + ":" + std::to_string(__LINE__));
+    }
+  }
+  //-----------------------------------------------------------------------------
   /// Compute lookup tables that are used during matrix assembly for
   /// kernels that need it
   template <dolfinx::scalar T,
@@ -366,7 +849,45 @@ public:
     const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
     std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
     dolfinx::la::CUDAMatrix& A,
-    bool verbose) const;
+    bool verbose) const
+  {
+    {
+      auto it = form_integrals.find(IntegralType::cell);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
+        auto & cuda_cell_integral = cuda_cell_integrals.at(0);
+        cuda_cell_integral.compute_lookup_table(
+          cuda_context, dofmap0, dofmap1, bc0, bc1, A, verbose);
+      }
+    }
+
+    {
+      auto it = form_integrals.find(IntegralType::exterior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>& cuda_exterior_facet_integrals =
+          it->second;
+        auto & cuda_exterior_facet_integral =
+          cuda_exterior_facet_integrals.at(0);
+        cuda_exterior_facet_integral.compute_lookup_table(
+          cuda_context, dofmap0, dofmap1, bc0, bc1, A, verbose);
+      }
+    }
+
+    {
+      auto it = form_integrals.find(IntegralType::interior_facet);
+      if (it != form_integrals.end()) {
+        std::vector<CUDAFormIntegral<T,U>>& cuda_interior_facet_integrals =
+          it->second;
+        auto & cuda_interior_facet_integral =
+          cuda_interior_facet_integrals.at(0);
+        cuda_interior_facet_integral.compute_lookup_table(
+          cuda_context, dofmap0, dofmap1, bc0, bc1, A, verbose);
+      }
+    }
+  }
+  //-----------------------------------------------------------------------------
+
+
 
 private:
   /// Module for various useful device-side functions

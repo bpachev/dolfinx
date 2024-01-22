@@ -469,6 +469,16 @@ public:
     return {_dofs0, _owned_indices0};
   }
 
+  /// Access dof indices (local indices, unrolled), including ghosts, to
+  /// which a Dirichlet condition is applied, in the space of the boundary value function.
+  /// @return Sorted array of dof indices (unrolled)
+  std::span<const std::int32_t> dof_value_indices() const
+  {
+    auto dofs1_g = _dofs1_g.empty() ? std::span(_dofs0) : std::span(_dofs1_g);
+    return dofs1_g;
+  }
+
+
   /// Set bc entries in `x` to `scale * x_bc`
   ///
   /// @param[in] x The array in which to set `scale * x_bc[i]`, where

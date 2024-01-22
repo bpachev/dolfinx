@@ -324,10 +324,19 @@ public:
 #if defined(HAS_CUDA_TOOLKIT)
   /// Create a device-side dofmap
   /// @param[in] cuda_context A context for a CUDA device
-  void create_cuda_dofmap(const CUDA::Context& cuda_context);
-
+  void create_cuda_dofmap(const CUDA::Context& cuda_context)
+  {
+    if (_cuda_dofmap)
+      return;
+    _cuda_dofmap = std::make_shared<dolfinx::fem::CUDADofMap>(
+      cuda_context, *_dofmap);
+  }
+  
   /// Device-side dofmap
-  std::shared_ptr<const fem::CUDADofMap> cuda_dofmap() const;
+  std::shared_ptr<const fem::CUDADofMap> cuda_dofmap() const
+  {
+    return _cuda_dofmap;
+  }
 #endif
 
 
