@@ -50,19 +50,21 @@ public:
     int dim)
     : _tdim(mesh.topology()->dim())
     , _dim(dim)
+    , _num_cells(mesh.geometry().dofmap().extent(0))
   {
     CUresult cuda_err;
     const char * cuda_err_description;
 
     // Get the data related to mesh entities
     mesh.topology_mutable()->create_entities(_dim);
-    _num_cells = mesh.topology_mutable()->index_map(_dim)->size_local();
     mesh.topology_mutable()->create_connectivity(_dim, _tdim);
     mesh.topology_mutable()->create_entity_permutations();
   const graph::AdjacencyList<std::int32_t>& cells_to_mesh_entities =
       *mesh.topology()->connectivity(_tdim, _dim);
 
     // Allocate device-side storage for mesh entities of each cell
+    std::cout << "Tdim " << _tdim << " dim " << _dim << std::endl;
+    std::cout << "Num cells " << _num_cells << " Num nodes " << cells_to_mesh_entities.num_nodes() << std::endl;
     assert(_num_cells == cells_to_mesh_entities.num_nodes());
     _num_mesh_entities_per_cell = cells_to_mesh_entities.num_links(0);
     if (_num_cells > 0 && _num_mesh_entities_per_cell > 0) {

@@ -41,7 +41,10 @@ CUDA::Context::Context()
       "at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
   }
 
-  cuda_err = cuDevicePrimaryCtxRetain(&_context, _device);
+  //cuda_err = cuDevicePrimaryCtxRetain(&_context, _device);
+  // TODO for some reason on Frontera the above isn't working.. . 
+  // Figure out why
+  cuda_err = cuCtxCreate(&_context, 0, _device);
   if (cuda_err != CUDA_SUCCESS) {
     cuGetErrorString(cuda_err, &cuda_err_description);
     throw std::runtime_error(
@@ -52,7 +55,8 @@ CUDA::Context::Context()
 //-----------------------------------------------------------------------------
 CUDA::Context::~Context()
 {
-    cuDevicePrimaryCtxRelease(_device);
+    cuCtxDestroy(_context);
+    //cuDevicePrimaryCtxRelease(_device);
 }
 //-----------------------------------------------------------------------------
 const CUdevice& CUDA::Context::device() const
@@ -101,7 +105,7 @@ CUDA::Module::Module(
     CU_JIT_GENERATE_DEBUG_INFO,
     CU_JIT_GENERATE_LINE_INFO,
     CU_JIT_OPTIMIZATION_LEVEL,
-    CU_JIT_TARGET,
+    CU_JIT_TARGET_FROM_CUCONTEXT,
   };
   void* default_option_values[] = {
     (void*) _info_log_size,

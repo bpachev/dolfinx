@@ -1726,7 +1726,7 @@ cuda_form_integrals(
     if (num_integrals > 0) {
       std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals =
         cuda_form_integrals[integral_type];
-      for (int i = 0; i < num_integrals; i++) {
+      for (int i : form.integral_ids(integral_type)) {
         cuda_cell_integrals.emplace_back(
           cuda_context, target, form, integral_type, i,
           max_threads_per_block,
@@ -1746,7 +1746,7 @@ cuda_form_integrals(
     if (num_integrals > 0) {
       std::vector<CUDAFormIntegral<T,U>>& cuda_exterior_facet_integrals =
         cuda_form_integrals[integral_type];
-      for (int i = 0; i < num_integrals; i++) {
+      for (int i : form.integral_ids(integral_type)) {
         cuda_exterior_facet_integrals.emplace_back(
           cuda_context, target, form, integral_type, i,
           max_threads_per_block,
@@ -1766,7 +1766,7 @@ cuda_form_integrals(
     if (num_integrals > 0) {
       std::vector<CUDAFormIntegral<T,U>>& cuda_interior_facet_integrals =
         cuda_form_integrals[integral_type];
-      for (int i = 0; i < num_integrals; i++) {
+      for (int i : form.integral_ids(integral_type)) {
         cuda_interior_facet_integrals.emplace_back(
           cuda_context, target, form, integral_type, i,
           max_threads_per_block,
