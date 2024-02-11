@@ -41,10 +41,10 @@ CUDA::Context::Context()
       "at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
   }
 
-  //cuda_err = cuDevicePrimaryCtxRetain(&_context, _device);
+  cuda_err = cuDevicePrimaryCtxRetain(&_context, _device);
   // TODO for some reason on Frontera the above isn't working.. . 
   // Figure out why
-  cuda_err = cuCtxCreate(&_context, 0, _device);
+  //cuda_err = cuCtxCreate(&_context, 0, _device);
   if (cuda_err != CUDA_SUCCESS) {
     cuGetErrorString(cuda_err, &cuda_err_description);
     throw std::runtime_error(
@@ -55,8 +55,8 @@ CUDA::Context::Context()
 //-----------------------------------------------------------------------------
 CUDA::Context::~Context()
 {
-    cuCtxDestroy(_context);
-    //cuDevicePrimaryCtxRelease(_device);
+    //cuCtxDestroy(_context);
+    cuDevicePrimaryCtxRelease(_device);
 }
 //-----------------------------------------------------------------------------
 const CUdevice& CUDA::Context::device() const
@@ -437,4 +437,17 @@ std::string CUDA::compile_cuda_cpp_to_ptx(
   return ptx;
 }
 //-----------------------------------------------------------------------------
+
+void CUDA::safeMemcpyDtoH(void * dstHost, CUdeviceptr srcDevice, size_t ByteCount)
+{
+  const char * cuda_err_description;
+  CUresult cuda_err = cuMemcpyDtoH(dstHost, srcDevice, ByteCount);
+  if (cuda_err != CUDA_SUCCESS) {
+    cuGetErrorString(cuda_err, &cuda_err_description);
+    throw std::runtime_error(
+        "cuMemcpyDtoH() failed with " + std::string(cuda_err_description) +
+        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+  } 
+}
+
 #endif

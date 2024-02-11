@@ -142,8 +142,12 @@ std::string compile_cuda_cpp_to_ptx(
   const char* program_src,
   const char* cudasrcdir,
   bool verbose);
+
+void safeMemcpyDtoH(void * dstHost, CUdeviceptr srcDevice, size_t ByteCount);
+
 #endif
 
 } // namespace CUDA
+
 
 } // namespace dolfinx

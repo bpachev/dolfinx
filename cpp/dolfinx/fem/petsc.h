@@ -47,6 +47,14 @@ Mat create_matrix(const Form<PetscScalar, T>& a,
   return la::petsc::create_matrix(a.mesh()->comm(), pattern, type);
 }
 
+template <std::floating_point T>
+Mat create_matrix_with_fixed_pattern(const Form<PetscScalar, T>& a)
+{
+  la::SparsityPattern pattern = fem::create_sparsity_pattern(a);
+  pattern.finalize();
+  return la::petsc::create_matrix_with_fixed_pattern(a.mesh()->comm(), pattern);  
+}
+
 /// Initialise a monolithic matrix for an array of bilinear forms
 /// @param[in] a Rectangular array of bilinear forms. The `a(i, j)` form
 /// will correspond to the `(i, j)` block in the returned matrix

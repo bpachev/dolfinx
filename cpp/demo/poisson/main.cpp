@@ -104,6 +104,8 @@
 #include <dolfinx/la/CUDAMatrix.h>
 #include <dolfinx/la/CUDAVector.h>
 #include <dolfinx/mesh/CUDAMesh.h>
+#include <petscdevicetypes.h> 
+#include <petscdevice.h> 
 #endif
 
 #include <utility>
@@ -134,7 +136,9 @@ int main(int argc, char* argv[])
   dolfinx::init_logging(argc, argv);
   PetscInitialize(&argc, &argv, nullptr, nullptr);
 #ifdef HAS_CUDA_TOOLKIT  
-  std::cout << "Initializing CUDA driver API";
+  std::cout << "Initializing petsc device." << std::endl;
+  PetscDeviceInitialize(PETSC_DEVICE_CUDA);
+  std::cout << "Initializing CUDA driver API" << std::endl;
   CUresult cuda_err = cuInit(0);
   if (cuda_err != CUDA_SUCCESS) {
     const char * cuda_err_description;
@@ -147,6 +151,7 @@ int main(int argc, char* argv[])
   {
 #if defined(HAS_CUDA_TOOLKIT)
     dolfinx::CUDA::Context cuda_context;
+
 #endif
     // Create mesh and function space
     auto part = mesh::create_cell_partitioner(mesh::GhostMode::shared_facet);
@@ -171,6 +176,7 @@ int main(int argc, char* argv[])
     auto f = std::make_shared<fem::Function<T>>(V);
     auto g = std::make_shared<fem::Function<T>>(V);
 #else
+    std::cout << "Initializing f and g." << std::endl;
     auto f = std::make_shared<fem::Function<T>>(cuda_context, V);
     auto g = std::make_shared<fem::Function<T>>(cuda_context, V);
 #endif    
@@ -229,6 +235,7 @@ int main(int argc, char* argv[])
         });
 
 #if defined(HAS_CUDA_TOOLKIT)
+    std::cout << "copying f to device" << std::endl;
     f->cuda_vector(cuda_context).copy_vector_values_to_device(cuda_context);
 #endif
 
@@ -256,13 +263,13 @@ int main(int argc, char* argv[])
 
     // Compute solution
     auto u = std::make_shared<fem::Function<T>>(V);
-    auto A = la::petsc::Matrix(fem::petsc::create_matrix(*a), false);
+    auto A = la::petsc::Matrix(fem::petsc::create_matrix_with_fixed_pattern(*a), false);
     la::Vector<T> b(L->function_spaces()[0]->dofmap()->index_map,
                     L->function_spaces()[0]->dofmap()->index_map_bs());
 #if defined(HAS_CUDA_TOOLKIT)
 
-    // for now hardcode target to be Ampere
-    CUjit_target cujit_target = CU_TARGET_COMPUTE_80;
+    // for now hardcode target to be RTX 5000
+    CUjit_target cujit_target = CU_TARGET_COMPUTE_75;
     dolfinx::fem::CUDAAssembler assembler(
     cuda_context, cujit_target, true, "poisson_demo_cudasrcdir", false);
     dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *mesh);
@@ -305,6 +312,33 @@ int main(int argc, char* argv[])
     assembler.add_diagonal(cuda_context, cuda_A, cuda_bc0);
     cuda_A.copy_matrix_values_to_host(cuda_context);
     cuda_A.apply(MAT_FINAL_ASSEMBLY);
+    std::cout << "Asssembled stiffness matrix." << std::endl;
+    //MatView(A.mat(), PETSC_VIEWER_STDOUT_WORLD);
+    std::int32_t n;
+    const std::int32_t* row_ptr = nullptr;
+    const std::int32_t* column_indices = nullptr;
+    PetscInt shift = 0;
+    PetscBool symmetric = PETSC_FALSE;
+    PetscBool inodecompressed = PETSC_FALSE;
+    PetscBool status = PETSC_FALSE;
+    MatGetRowIJ(
+    A.mat(), shift, symmetric, inodecompressed,
+    &n, &row_ptr, &column_indices, &status);
+    PetscScalar* values = nullptr;
+    auto ierr = MatSeqAIJGetArray(A.mat(), &values);
+    int col_sum = 0;
+    float val_sum = 0.0;
+    if (ierr != 0) std::cout << "Cannot get info from mat" << std::endl;
+    else {
+      int nnz = (n==0) ? n : row_ptr[n];
+      std::cout << "returned nonzeros " << nnz << std::endl;
+      for (int j=0; j<nnz; j++) {
+        //val_sum += values[j];
+        col_sum += column_indices[j];
+      }
+    }
+    std::cout << "Val sum: " << val_sum << " col sum " << col_sum << std::endl;
+
 #else
     MatZeroEntries(A.mat());
     fem::assemble_matrix(la::petsc::Matrix::set_block_fn(A.mat(), ADD_VALUES),
@@ -357,6 +391,8 @@ int main(int argc, char* argv[])
     cuda_b.copy_vector_values_to_host(cuda_context);
     //cuda_b.apply_ghosts();
     assembler.set_bc(cuda_context, cuda_bc0, cuda_x0, 1.0, cuda_b);
+    std::cout << "Assembly complete." << std::endl;
+    
 #else
     b.set(0.0);
     fem::assemble_vector(b.mutable_array(), *L);

@@ -117,6 +117,11 @@ void scatter_local_vectors(
 Mat create_matrix(MPI_Comm comm, const SparsityPattern& sp,
                   std::string type = std::string());
 
+
+/// Create a PETSc Mat with immutable sparsity pattern. Caller is responsible for destroying the
+/// returned object.
+Mat create_matrix_with_fixed_pattern(MPI_Comm comm, const SparsityPattern& sp);
+
 /// Create PETSc MatNullSpace. Caller is responsible for destruction
 /// returned object.
 /// @param [in] comm The MPI communicator

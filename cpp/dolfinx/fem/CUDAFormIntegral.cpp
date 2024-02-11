@@ -54,7 +54,7 @@ std::string cuda_kernel_assemble_vector_cell(
     "  int num_vertices,\n"
     "  int num_coordinates_per_vertex,\n"
     "  const double* __restrict__ vertex_coordinates,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+   // "  const uint32_t* __restrict__ cell_permutations,\n"
     "  int32_t num_active_cells,\n"
     "  const int32_t* __restrict__ active_cells,\n"
     "  int num_constant_values,\n"
@@ -101,7 +101,7 @@ std::string cuda_kernel_assemble_vector_cell(
     "\n"
     "    int* entity_local_index = NULL;\n"
     "    uint8_t* quadrature_permutation = NULL;\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+   // "    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element vector\n"
     "    " + tabulate_tensor_function_name + "(\n"
@@ -110,8 +110,7 @@ std::string cuda_kernel_assemble_vector_cell(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // Add element vector values to the global vector,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -144,7 +143,7 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
     "  int num_vertices,\n"
     "  int num_coordinates_per_vertex,\n"
     "  const double* __restrict__ vertex_coordinates,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+    //"  const uint32_t* __restrict__ cell_permutations,\n"
     "  int32_t num_mesh_entities,\n"
     "  int32_t num_mesh_entities_per_cell,\n"
     "  const int32_t* __restrict__ mesh_entities_per_cell,\n"
@@ -208,7 +207,7 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
     "    const uint8_t* quadrature_permutation =\n"
     "      &mesh_entity_permutations[\n"
     "        local_mesh_entity*num_cells+c];\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+   // "    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element vector\n"
     "    " + tabulate_tensor_function_name + "(\n"
@@ -217,8 +216,7 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      &local_mesh_entity,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // Add element vector values to the global vector,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -286,7 +284,7 @@ std::string cuda_kernel_lift_bc_cell(
     "  const ufc_scalar_t* __restrict__ coeffs,\n"
     "  int num_constant_values,\n"
     "  const ufc_scalar_t* __restrict__ constant_values,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+   // "  const uint32_t* __restrict__ cell_permutations,\n"
     "  int num_dofs_per_cell0,\n"
     "  int num_dofs_per_cell1,\n"
     "  const int32_t* __restrict__ dofmap0,\n"
@@ -348,7 +346,7 @@ std::string cuda_kernel_lift_bc_cell(
     "\n"
     "    int* entity_local_index = NULL;\n"
     "    uint8_t* quadrature_permutation = NULL;\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+   // "    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element matrix\n"
     "    " + tabulate_tensor_function_name + "(\n"
@@ -357,8 +355,7 @@ std::string cuda_kernel_lift_bc_cell(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // Compute modified element vector\n"
     "    const int32_t* dofs0 = &dofmap0[c*" + std::to_string(num_dofs_per_cell0) + "];\n"
@@ -429,7 +426,7 @@ std::string cuda_kernel_assemble_matrix_cell_local(
     "  int num_coeffs_per_cell,\n"
     "  const ufc_scalar_t* __restrict__ coeffs,\n"
     "  const ufc_scalar_t* __restrict__ constant_values,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+   // "  const uint32_t* __restrict__ cell_permutations,\n"
     "  int num_dofs_per_cell0,\n"
     "  int num_dofs_per_cell1,\n"
     "  const int32_t* __restrict__ dofmap0,\n"
@@ -476,7 +473,7 @@ std::string cuda_kernel_assemble_matrix_cell_local(
     "\n"
     "    int* entity_local_index = NULL;\n"
     "    uint8_t* quadrature_permutation = NULL;\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+   // "    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element matrix\n"
     "    " + tabulate_tensor_function_name + "(\n"
@@ -485,8 +482,7 @@ std::string cuda_kernel_assemble_matrix_cell_local(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // For degrees of freedom that are subject to essential boundary conditions,\n"
     "    // set the element matrix values to zero.\n"
@@ -540,7 +536,7 @@ std::string cuda_kernel_assemble_matrix_cell_global(
     "  int num_coeffs_per_cell,\n"
     "  const ufc_scalar_t* __restrict__ coeffs,\n"
     "  const ufc_scalar_t* __restrict__ constant_values,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+    //"  const uint32_t* __restrict__ cell_permutations,\n"
     "  int num_dofs_per_cell0,\n"
     "  int num_dofs_per_cell1,\n"
     "  const int32_t* __restrict__ dofmap0,\n"
@@ -595,7 +591,7 @@ std::string cuda_kernel_assemble_matrix_cell_global(
     "\n"
     "    int* entity_local_index = NULL;\n"
     "    uint8_t* quadrature_permutation = NULL;\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+    //"    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element matrix\n"
     "    " + tabulate_tensor_function_name + "(\n"
@@ -604,8 +600,7 @@ std::string cuda_kernel_assemble_matrix_cell_global(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // Add element matrix values to the global matrix,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -765,7 +760,7 @@ std::string cuda_kernel_assemble_matrix_cell_lookup_table(
     "  int num_coeffs_per_cell,\n"
     "  const ufc_scalar_t* __restrict__ coeffs,\n"
     "  const ufc_scalar_t* __restrict__ constant_values,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+    //"  const uint32_t* __restrict__ cell_permutations,\n"
     "  int num_dofs_per_cell0,\n"
     "  int num_dofs_per_cell1,\n"
     "  const int32_t* __restrict__ nonzero_locations,\n"
@@ -808,7 +803,7 @@ std::string cuda_kernel_assemble_matrix_cell_lookup_table(
     "\n"
     "    int* entity_local_index = NULL;\n"
     "    uint8_t* quadrature_permutation = NULL;\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+    //"    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element matrix\n"
     "    " + tabulate_tensor_function_name + "(\n"
@@ -817,8 +812,7 @@ std::string cuda_kernel_assemble_matrix_cell_lookup_table(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // Add element matrix values to the global matrix,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -959,7 +953,7 @@ std::string cuda_kernel_assemble_matrix_cell_rowwise(
     "  int num_coeffs_per_cell,\n"
     "  const ufc_scalar_t* __restrict__ coeffs,\n"
     "  const ufc_scalar_t* __restrict__ constant_values,\n"
-    "  const uint32_t* __restrict__ cell_permutations,\n"
+    //"  const uint32_t* __restrict__ cell_permutations,\n"
     "  int num_dofs_per_cell0,\n"
     "  int num_dofs_per_cell1,\n"
     "  const int32_t* __restrict__ cells_per_dof_ptr,\n"
@@ -992,7 +986,7 @@ std::string cuda_kernel_assemble_matrix_cell_rowwise(
     "    const ufc_scalar_t* coeff_cell = &coeffs[c*num_coeffs_per_cell];\n"
     "    int* entity_local_index = NULL;\n"
     "    uint8_t* quadrature_permutation = NULL;\n"
-    "    uint32_t cell_permutation = cell_permutations[c];\n"
+    //"    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Gather cell vertex coordinates\n"
     "    for (int j = 0; j < " + std::to_string(num_vertices_per_cell) + "; j++) {\n"
@@ -1018,8 +1012,7 @@ std::string cuda_kernel_assemble_matrix_cell_rowwise(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
-    "      quadrature_permutation,\n"
-    "      cell_permutation);\n"
+    "      quadrature_permutation);\n"
     "\n"
     "    // Add element matrix values to the global matrix,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -1296,7 +1289,8 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
   enum assembly_kernel_type assembly_kernel_type,
   bool debug,
   const char* cudasrcdir,
-  bool verbose)
+  bool verbose,
+  std::string& factory_name)
 {
   // Obtain the automatically generated CUDA C++ code for the
   // element matrix kernel (tabulate_tensor).
@@ -1305,15 +1299,16 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
   const char** program_include_names;
   const char* tabulate_tensor_src;
   const char* tabulate_tensor_function_name;
+  std::cout << "About to call CUDA Tabulate" << std::endl;
   cuda_tabulate(
     &num_program_headers, &program_headers,
     &program_include_names, &tabulate_tensor_src,
     &tabulate_tensor_function_name);
-
+  std::cout << "Finished calling CUDA Tabulate" << std::endl;
   // Generate CUDA C++ code for the assembly kernel
 
   // extract the factory/integral name from the tabulate tensor name
-  std::string factory_name = std::string(tabulate_tensor_function_name);
+  factory_name = std::string(tabulate_tensor_function_name);
   std::string pref = std::string("tabulate_tensor");
   if ((factory_name.find(pref) == 0) && (factory_name.length() > pref.length())) {
     factory_name = factory_name.replace(0, pref.length(), std::string(""));

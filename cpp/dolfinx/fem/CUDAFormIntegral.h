@@ -127,7 +127,7 @@ void assemble_vector_cell(
   std::int32_t num_vertices = mesh.num_vertices();
   std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
   CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-  CUdeviceptr dcell_permutations = mesh.cell_permutations();
+  //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
   // Integral constants and coefficients
   std::int32_t num_constant_values = constants.num_constant_values();
@@ -177,7 +177,7 @@ void assemble_vector_cell(
     &num_vertices,
     &num_coordinates_per_vertex,
     &dvertex_coordinates,
-    &dcell_permutations,
+   // &dcell_permutations,
     &num_active_mesh_entities,
     &dactive_mesh_entities,
     &num_constant_values,
@@ -239,7 +239,7 @@ void assemble_vector_exterior_facet(
   std::int32_t num_vertices = mesh.num_vertices();
   std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
   CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-  CUdeviceptr dcell_permutations = mesh.cell_permutations();
+  //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
   // Integral constants and coefficients
   std::int32_t num_constant_values = constants.num_constant_values();
@@ -275,7 +275,7 @@ void assemble_vector_exterior_facet(
     &num_vertices,
     &num_coordinates_per_vertex,
     &dvertex_coordinates,
-    &dcell_permutations,
+    //&dcell_permutations,
     &num_mesh_entities,
     &num_mesh_entities_per_cell,
     &dmesh_entities_per_cell,
@@ -367,7 +367,7 @@ void lift_bc_cell(
   std::int32_t num_vertices = mesh.num_vertices();
   std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
   CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-  CUdeviceptr dcell_permutations = mesh.cell_permutations();
+  //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
   int num_dofs_per_cell0 = dofmap0.num_dofs_per_cell();
   CUdeviceptr ddofmap0 = dofmap0.dofs_per_cell();
@@ -422,7 +422,7 @@ void lift_bc_cell(
     &dcoefficient_values,
     &num_constant_values,
     &dconstant_values,
-    &dcell_permutations,
+   // &dcell_permutations,
     &num_dofs_per_cell0,
     &num_dofs_per_cell1,
     &ddofmap0,
@@ -475,7 +475,8 @@ CUDA::Module compile_form_integral_kernel(
   enum assembly_kernel_type assembly_kernel_type,
   bool debug,
   const char* cudasrcdir,
-  bool verbose);
+  bool verbose,
+  std::string& factory_name);
 
 /// A wrapper for a form integral with a CUDA-based assembly kernel
 /// and data that is stored in the device memory of a CUDA device.
@@ -571,7 +572,7 @@ public:
                          num_dofs_per_cell0,
                          num_dofs_per_cell1,
                          assembly_kernel_type,
-                         debug, cudasrcdir, verbose))
+                         debug, cudasrcdir, verbose, _name))
     , _assembly_kernel_type(assembly_kernel_type)
     , _assembly_kernel()
     , _compute_lookup_table_kernel()
@@ -915,7 +916,7 @@ public:
     std::int32_t num_vertices = mesh.num_vertices();
     std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
     CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-    CUdeviceptr dcell_permutations = mesh.cell_permutations();
+    //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
     std::int32_t num_dofs_per_cell0 = dofmap0.num_dofs_per_cell();
     CUdeviceptr ddofmap0 = dofmap0.dofs_per_cell();
@@ -969,7 +970,7 @@ public:
       &num_coefficient_values_per_cell,
       &dcoefficient_values,
       &dconstant_values,
-      &dcell_permutations,
+     // &dcell_permutations,
       &num_dofs_per_cell0,
       &num_dofs_per_cell1,
       &ddofmap0,
@@ -1078,7 +1079,7 @@ public:
     std::int32_t num_vertices = mesh.num_vertices();
     std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
     CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-    CUdeviceptr dcell_permutations = mesh.cell_permutations();
+    //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
     std::int32_t num_dofs_per_cell0 = dofmap0.num_dofs_per_cell();
     CUdeviceptr ddofmap0 = dofmap0.dofs_per_cell();
@@ -1140,7 +1141,7 @@ public:
       &num_coefficient_values_per_cell,
       &dcoefficient_values,
       &dconstant_values,
-      &dcell_permutations,
+      //&dcell_permutations,
       &num_dofs_per_cell0,
       &num_dofs_per_cell1,
       &ddofmap0,
@@ -1211,7 +1212,7 @@ public:
     std::int32_t num_vertices = mesh.num_vertices();
     std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
     CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-    CUdeviceptr dcell_permutations = mesh.cell_permutations();
+    //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
     std::int32_t num_dofs_per_cell0 = dofmap0.num_dofs_per_cell();
     std::int32_t num_dofs_per_cell1 = dofmap1.num_dofs_per_cell();
@@ -1259,7 +1260,7 @@ public:
       &num_coefficient_values_per_cell,
       &dcoefficient_values,
       &dconstant_values,
-      &dcell_permutations,
+      //&dcell_permutations,
       &num_dofs_per_cell0,
       &num_dofs_per_cell1,
       &nonzero_locations,
@@ -1319,7 +1320,7 @@ public:
     std::int32_t num_vertices = mesh.num_vertices();
     std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
     CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
-    CUdeviceptr dcell_permutations = mesh.cell_permutations();
+    //CUdeviceptr dcell_permutations = mesh.cell_permutations();
 
     std::int32_t num_dofs_per_cell0 = dofmap0.num_dofs_per_cell();
     std::int32_t num_dofs_per_cell1 = dofmap1.num_dofs_per_cell();
@@ -1370,7 +1371,7 @@ public:
       &num_coefficient_values_per_cell,
       &dcoefficient_values,
       &dconstant_values,
-      &dcell_permutations,
+     // &dcell_permutations,
       &num_dofs_per_cell0,
       &num_dofs_per_cell1,
       &dcells_per_dof_ptr,
