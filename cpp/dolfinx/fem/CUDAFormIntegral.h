@@ -1704,7 +1704,8 @@ cuda_form_integrals(
   // Get the number of vertices and coordinates
   const mesh::Mesh<U>& mesh = *form.mesh();
   std::int32_t num_vertices_per_cell = mesh::num_cell_vertices(mesh.geometry().cmap().cell_shape());
-  std::int32_t num_coordinates_per_vertex = mesh.geometry().dim();
+  //std::int32_t num_coordinates_per_vertex = mesh.geometry().dim();
+  std::int32_t num_coordinates_per_vertex = 3;
 
   // Find the number of degrees of freedom per cell
   int32_t num_dofs_per_cell0 = 1;

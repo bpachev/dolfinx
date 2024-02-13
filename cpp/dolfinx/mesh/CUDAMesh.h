@@ -54,7 +54,11 @@ public:
     // Allocate device-side storage for vertex coordinates
     auto vertex_coordinates = mesh.geometry().x();
     _num_vertices = vertex_coordinates.size() / 3;
-    _num_coordinates_per_vertex = mesh.geometry().dim();
+    // TODO figure out how to handle this properly
+    // FEniCSx has a dimension of 3 during assembly, but returns a 
+    // different value for the dim of mesh.geometry
+    _num_coordinates_per_vertex = 3;
+    //_num_coordinates_per_vertex = mesh.geometry().dim();
     if (_num_vertices > 0 && _num_coordinates_per_vertex > 0) {
       if (_num_coordinates_per_vertex > 3) {
         throw std::runtime_error(
