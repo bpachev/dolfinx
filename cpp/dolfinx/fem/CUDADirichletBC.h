@@ -93,25 +93,23 @@ public:
     }
 
     // Build dof markers, indices and values
-    char* dof_markers = nullptr;
+    signed char* dof_markers = nullptr;
     std::vector<std::int32_t> dof_indices(_num_boundary_dofs);
     std::vector<std::int32_t> dof_value_indices(_num_boundary_dofs);
     std::vector<T> dof_values;
-    std::vector<signed char> dof_markers2;
     _num_owned_boundary_dofs = 0;
     _num_boundary_dofs = 0;
     for (auto const& bc : bcs) {
       if (V.contains(*bc->function_space())) {
         if (!dof_markers) {
-          dof_markers = new char[_num_dofs];
+          dof_markers = new signed char[_num_dofs];
           for (int i = 0; i < _num_dofs; i++) {
             dof_markers[i] = 0;
-            dof_markers2.push_back(0);
           }
           dof_values.assign(_num_dofs, 0.0);
         }
         
-        bc->mark_dofs(std::span(dof_markers2.data(), dof_markers2.size()));
+        bc->mark_dofs(std::span(dof_markers, _num_dofs));
         auto const [dofs, range] = bc->dof_indices();
         auto dof_value_inds = bc->dof_value_indices();
         for (std::int32_t i = 0; i < dofs.size(); i++) {

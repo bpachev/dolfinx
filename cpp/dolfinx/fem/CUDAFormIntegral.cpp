@@ -111,6 +111,7 @@ std::string cuda_kernel_assemble_vector_cell(
     "      cell_vertex_coordinates,\n"
     "      entity_local_index,\n"
     "      quadrature_permutation);\n"
+
     "\n"
     "    // Add element vector values to the global vector,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -171,22 +172,12 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
     "  assert(num_dofs_per_cell == " + std::to_string(num_dofs_per_cell) + ");\n"
     "  ufc_scalar_t xe[" + std::to_string(num_dofs_per_cell) + "];\n"
     "\n"
-    "  for (int i = thread_idx;\n"
+    "  for (int i = 2*thread_idx;\n"
     "    i < num_active_mesh_entities;\n"
-    "    i += blockDim.x * gridDim.x)\n"
+    "    i += 2*blockDim.x * gridDim.x)\n"
     "  {\n"
-    "    int32_t e = active_mesh_entities[i];\n"
-    "    int32_t c = cells_per_mesh_entity[\n"
-    "      cells_per_mesh_entity_ptr[e]];\n"
-    "\n"
-    "    // Find the local index of the mesh entity with respect to the cell\n"
-    "    int32_t local_mesh_entity = 0;\n"
-    "    for (; local_mesh_entity < num_mesh_entities_per_cell; local_mesh_entity++) {\n"
-    "      if (e == mesh_entities_per_cell[\n"
-    "            c*num_mesh_entities_per_cell+local_mesh_entity])\n"
-    "        break;\n"
-    "    }\n"
-    "\n"
+    "    int32_t c = active_mesh_entities[i];\n"
+    "    int32_t local_mesh_entity = active_mesh_entities[i+1];\n"
     "    // Set element vector values to zero\n"
     "    for (int j = 0; j < " + std::to_string(num_dofs_per_cell) + "; j++) {\n"
     "      xe[j] = 0.0;\n"
@@ -204,9 +195,9 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
     "      }\n"
     "    }\n"
     "\n"
-    "    const uint8_t* quadrature_permutation =\n"
-    "      &mesh_entity_permutations[\n"
-    "        local_mesh_entity*num_cells+c];\n"
+   // "    const uint8_t* quadrature_permutation =\n"
+   // "      &mesh_entity_permutations[\n"
+   // "        local_mesh_entity*num_cells+c];\n"
    // "    uint32_t cell_permutation = cell_permutations[c];\n"
     "\n"
     "    // Compute element vector\n"
@@ -216,7 +207,7 @@ std::string cuda_kernel_assemble_vector_exterior_facet(
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
     "      &local_mesh_entity,\n"
-    "      quadrature_permutation);\n"
+    "      nullptr);\n"
     "\n"
     "    // Add element vector values to the global vector,\n"
     "    // skipping entries related to degrees of freedom\n"
@@ -1299,12 +1290,10 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
   const char** program_include_names;
   const char* tabulate_tensor_src;
   const char* tabulate_tensor_function_name;
-  std::cout << "About to call CUDA Tabulate" << std::endl;
   cuda_tabulate(
     &num_program_headers, &program_headers,
     &program_include_names, &tabulate_tensor_src,
     &tabulate_tensor_function_name);
-  std::cout << "Finished calling CUDA Tabulate" << std::endl;
   // Generate CUDA C++ code for the assembly kernel
 
   // extract the factory/integral name from the tabulate tensor name
