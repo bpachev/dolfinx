@@ -541,11 +541,21 @@ void declare_form(nb::module_& m, std::string type)
                     std::vector<std::int32_t>(e.data(), e.data() + e.size()));
               }
             }
-
+#ifdef HAS_CUDA_TOOLKIT
+	    std::map<dolfinx::fem::IntegralType,
+                      std::vector<std::tuple<
+                          int,
+                          std::function<void(int*, const char***, const char***,
+                                             const char**, const char**)>>>> _cuda_integrals;
+            new (fp) dolfinx::fem::Form<T, U>(spaces, _integrals, _cuda_integrals, coefficients,
+                                              constants, needs_permutation_data,
+                                              mesh);
+#else	    
             new (fp) dolfinx::fem::Form<T, U>(spaces, _integrals, coefficients,
                                               constants, needs_permutation_data,
                                               mesh);
-          },
+#endif
+	  },
           nb::arg("spaces"), nb::arg("integrals"), nb::arg("coefficients"),
           nb::arg("constants"), nb::arg("need_permutation_data"),
           nb::arg("mesh").none())
