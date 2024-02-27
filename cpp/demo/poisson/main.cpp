@@ -388,9 +388,9 @@ int main(int argc, char* argv[])
         dofmap1, cuda_a_form_integrals_list, cuda_a_form_constants_list,
         cuda_a_form_coefficients_list,
         cuda_bc1_list, cuda_x0_list, 1.0, cuda_b, false);
-    cuda_b.copy_vector_values_to_host(cuda_context);
     //cuda_b.apply_ghosts();
     assembler.set_bc(cuda_context, cuda_bc0, cuda_x0, 1.0, cuda_b);
+    cuda_b.copy_vector_values_to_host(cuda_context);
     std::cout << "Assembly complete." << std::endl;
     
 #else
