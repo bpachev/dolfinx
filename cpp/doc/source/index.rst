@@ -1,5 +1,5 @@
 =============================
-DOLFINx C++ API documentation
+DOLFINx C++ documentation
 =============================
 
 The is experimental documentation for the C++ API. The full Doxygen
@@ -15,16 +15,10 @@ API documentation
 =================
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
-   common
-   geometry
-   graph
-   fem
-   io
-   la
-   mesh
-   refinement
+   demo
+   api
 
 * :ref:`genindex`
 

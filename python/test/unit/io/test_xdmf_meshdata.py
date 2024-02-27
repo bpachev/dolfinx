@@ -13,8 +13,7 @@ import pytest
 
 from dolfinx import default_real_type
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (CellType, create_unit_cube, create_unit_interval,
-                          create_unit_square)
+from dolfinx.mesh import CellType, create_unit_cube, create_unit_interval, create_unit_square
 
 # Supported XDMF file encoding
 if MPI.COMM_WORLD.size > 1:
@@ -52,5 +51,7 @@ def test_read_mesh_data(tempdir, tdim, n):
 
     assert cell_shape == mesh.topology.cell_type
     assert cell_degree == 1
-    assert mesh.topology.index_map(tdim).size_global == mesh.comm.allreduce(cells.shape[0], op=MPI.SUM)
+    assert mesh.topology.index_map(tdim).size_global == mesh.comm.allreduce(
+        cells.shape[0], op=MPI.SUM
+    )
     assert mesh.geometry.index_map().size_global == mesh.comm.allreduce(x.shape[0], op=MPI.SUM)

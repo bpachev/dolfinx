@@ -97,8 +97,7 @@ fem::create_element_dof_layout(const ufcx_dofmap& dofmap,
 //-----------------------------------------------------------------------------
 fem::DofMap fem::create_dofmap(
     MPI_Comm comm, const ElementDofLayout& layout, mesh::Topology& topology,
-    std::function<void(const std::span<std::int32_t>&, std::uint32_t)>
-        unpermute_dofs,
+    std::function<void(std::span<std::int32_t>, std::uint32_t)> unpermute_dofs,
     std::function<std::vector<int>(const graph::AdjacencyList<std::int32_t>&)>
         reorder_fn)
 {
@@ -110,8 +109,8 @@ fem::DofMap fem::create_dofmap(
       topology.create_entities(d);
   }
 
-  auto [_index_map, bs, dofmap]
-      = build_dofmap_data(comm, topology, layout, reorder_fn);
+  auto [_index_map, bs, dofmaps]
+      = build_dofmap_data(comm, topology, {layout}, reorder_fn);
   auto index_map = std::make_shared<common::IndexMap>(std::move(_index_map));
 
   // If the element's DOF transformations are permutations, permute the
@@ -126,12 +125,12 @@ fem::DofMap fem::create_dofmap(
     int dim = layout.num_dofs();
     for (std::int32_t cell = 0; cell < num_cells; ++cell)
     {
-      std::span<std::int32_t> dofs(dofmap.data() + cell * dim, dim);
+      std::span<std::int32_t> dofs(dofmaps.front().data() + cell * dim, dim);
       unpermute_dofs(dofs, cell_info[cell]);
     }
   }
 
-  return DofMap(layout, index_map, bs, std::move(dofmap), bs);
+  return DofMap(layout, index_map, bs, std::move(dofmaps.front()), bs);
 }
 //-----------------------------------------------------------------------------
 std::vector<std::string> fem::get_coefficient_names(const ufcx_form& ufcx_form)

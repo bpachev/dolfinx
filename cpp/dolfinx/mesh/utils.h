@@ -166,18 +166,17 @@ std::vector<std::int32_t> exterior_facet_indices(const Topology& topology);
 ///
 /// @param[in] comm MPI Communicator
 /// @param[in] nparts Number of partitions
-/// @param[in] tdim Topological dimension
+/// @param[in] cell_type Type of cell in mesh
 /// @param[in] cells Cells on this process. The ith entry in list
 /// contains the global indices for the cell vertices. Each cell can
 /// appear only once across all processes. The cell vertex indices are
 /// not necessarily contiguous globally, i.e. the maximum index across
 /// all processes can be greater than the number of vertices. High-order
 /// 'nodes', e.g. mid-side points, should not be included.
-/// @param[in] ghost_mode How to overlap the cell partitioning: none,
-/// shared_facet or shared_vertex
 /// @return Destination ranks for each cell on this process
+/// @note Cells can have multiple destination ranks, when ghosted.
 using CellPartitionFunction = std::function<graph::AdjacencyList<std::int32_t>(
-    MPI_Comm comm, int nparts, int tdim,
+    MPI_Comm comm, int nparts, CellType cell_type,
     const graph::AdjacencyList<std::int64_t>& cells)>;
 
 /// @brief Extract topology from cell data, i.e. extract cell vertices.
@@ -534,8 +533,8 @@ std::vector<std::int32_t> locate_entities(const Mesh<T>& mesh, int dim,
 /// owned boundary facet and evaluate to true for the provided geometric
 /// marking function.
 ///
-/// An entity is considered marked if the marker function evaluates to true
-/// for all of its vertices.
+/// An entity is considered marked if the marker function evaluates to
+/// true for all of its vertices.
 ///
 /// @note For vertices and edges, in parallel this function will not
 /// necessarily mark all entities that are on the exterior boundary. For
@@ -618,12 +617,12 @@ std::vector<std::int32_t> locate_entities_boundary(const Mesh<T>& mesh, int dim,
 /// @warning This function should not be used unless there is no
 /// alternative. It may be removed in the future.
 ///
-/// @param[in] mesh The mesh
-/// @param[in] dim Topological dimension of the entities of interest
+/// @param[in] mesh The mesh.
+/// @param[in] dim Topological dimension of the entities of interest.
 /// @param[in] entities Entity indices (local) to compute the vertex
-/// geometry indices for
+/// geometry indices for.
 /// @param[in] orient If true, in 3D, reorients facets to have
-/// consistent normal direction
+/// consistent normal direction.
 /// @return Indices in the geometry array for the entity vertices. The
 /// shape is `(num_entities, num_vertices_per_entity)` and the storage
 /// is row-major. The index `indices[i, j]` is the position in the
@@ -792,7 +791,6 @@ Mesh<typename std::remove_reference_t<typename U::value_type>> create_mesh(
     const CellPartitionFunction& partitioner)
 {
   CellType celltype = element.cell_shape();
-  int tdim = cell_dim(celltype);
   const fem::ElementDofLayout doflayout = element.create_dof_layout();
 
   const int num_cell_vertices = mesh::num_cell_vertices(element.cell_shape());
@@ -819,7 +817,7 @@ Mesh<typename std::remove_reference_t<typename U::value_type>> create_mesh(
       auto t = graph::regular_adjacency_list(
           extract_topology(element.cell_shape(), doflayout, cells),
           num_cell_vertices);
-      dest = partitioner(commt, size, tdim, t);
+      dest = partitioner(commt, size, celltype, t);
     }
 
     // Distribute cells (topology, includes higher-order 'nodes') to
@@ -857,8 +855,8 @@ Mesh<typename std::remove_reference_t<typename U::value_type>> create_mesh(
       cell_offsets[i] = cell_offsets[i - 1] + num_cell_vertices;
     auto [graph, unmatched_facets, max_v, facet_attached_cells]
         = build_local_dual_graph(
-            std::span(cells1_v.data(), num_owned_cells * num_cell_vertices),
-            cell_offsets, tdim);
+            celltype,
+            std::span(cells1_v.data(), num_owned_cells * num_cell_vertices));
     const std::vector<int> remap = graph::reorder_gps(graph);
 
     // Create re-ordered cell lists (leaves ghosts unchanged)

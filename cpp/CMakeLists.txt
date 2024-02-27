@@ -87,12 +87,107 @@ add_feature_info(
 # ------------------------------------------------------------------------------
 # Enable or disable optional packages
 
-# List optional packages
+if(DOLFINX_ENABLE_ADIOS2)
+  set(_REQUIRE_ADIOS2
+      TRUE
+      CACHE BOOL "Is ADIOS2 REQUIRED?"
+  )
+else()
+  set(_REQUIRE_ADIOS2
+      FALSE
+      CACHE BOOL "Is ADIOS2 REQUIRED?"
+  )
+endif()
 option(DOLFINX_ENABLE_ADIOS2 "Compile with support for ADIOS2." ON)
+set_package_properties(
+  ADIOS2 PROPERTIES
+  TYPE OPTIONAL
+  DESCRIPTION "Adaptable Input/Output (I/O) System."
+  URL "https://adios2.readthedocs.io/en/latest/"
+  PURPOSE "IO, including in parallel"
+)
+
+if(DOLFINX_ENABLE_PARMETIS)
+  set(_REQUIRE_PARMETIS
+      TRUE
+      CACHE BOOL "Is Parmetis REQUIRED?"
+  )
+else()
+  set(_REQUIRE_PARMETIS
+      FALSE
+      CACHE BOOL "Is Parmetis REQUIRED?"
+  )
+endif()
 option(DOLFINX_ENABLE_PARMETIS "Compile with support for ParMETIS." ON)
+set_package_properties(
+  ParMETIS PROPERTIES
+  TYPE RECOMMENDED
+  DESCRIPTION "Parallel Graph Partitioning and Fill-reducing Matrix Ordering"
+  URL "http://glaros.dtc.umn.edu/gkhome/metis/parmetis/overview"
+  PURPOSE "Parallel graph partitioning"
+)
+
+if(DOLFINX_ENABLE_SCOTCH)
+  set(_REQUIRE_SCOTCH
+      TRUE
+      CACHE BOOL "Is SCOTCH REQUIRED?"
+  )
+else()
+  set(_REQUIRE_SCOTCH
+      FALSE
+      CACHE BOOL "Is SCOTCH REQUIRED?"
+  )
+endif()
 option(DOLFINX_ENABLE_SCOTCH "Compile with support for SCOTCH." ON)
+set_package_properties(
+  SCOTCH PROPERTIES
+  TYPE OPTIONAL
+  DESCRIPTION
+    "Programs and libraries for graph, mesh and hypergraph partitioning"
+  URL "https://www.labri.fr/perso/pelegrin/scotch"
+  PURPOSE "Parallel graph partitioning"
+)
+
+if(DOLFINX_ENABLE_SLEPC)
+  set(_REQUIRE_SLEPC
+      TRUE
+      CACHE BOOL "Is SLEPc REQUIRED?"
+  )
+else()
+  set(_REQUIRE_SLEPC
+      FALSE
+      CACHE BOOL "Is SLEPc REQUIRED?"
+  )
+endif()
 option(DOLFINX_ENABLE_SLEPC "Compile with support for SLEPc." ON)
+set_package_properties(
+  SLEPc PROPERTIES
+  TYPE RECOMMENDED
+  DESCRIPTION "Scalable Library for Eigenvalue Problem Computations"
+  URL "http://slepc.upv.es/"
+  PURPOSE "Eigenvalue computation"
+)
+
+if(DOLFINX_ENABLE_KAHIP)
+  set(_REQUIRE_KAHIP
+      TRUE
+      CACHE BOOL "Is KaHIP REQUIRED?"
+  )
+else()
+  set(_REQUIRE_KAHIP
+      FALSE
+      CACHE BOOL "Is KaHIP REQUIRED?"
+  )
+endif()
 option(DOLFINX_ENABLE_KAHIP "Compile with support for KaHIP." OFF)
+set_package_properties(
+  KaHIP PROPERTIES
+  TYPE OPTIONAL
+  DESCRIPTION "A family of graph partitioning programs"
+  URL "https://kahip.github.io/"
+  PURPOSE "Parallel graph partitioning"
+)
+
 option(DOLFINX_ENABLE_CUDATOOLKIT "Compile with support for CUDAToolkit." OFF)
 
 # ------------------------------------------------------------------------------
@@ -275,17 +370,12 @@ set_package_properties(
 
 # ------------------------------------------------------------------------------
 # Find optional packages
-if(DOLFINX_ENABLE_ADIOS2)
+
+if(DOLFINX_ENABLE_ADIOS2 AND _REQUIRE_ADIOS2)
+  find_package(ADIOS2 2.8.1 REQUIRED)
+elseif(DOLFINX_ENABLE_ADIOS2)
   find_package(ADIOS2 2.8.1)
 endif()
-
-set_package_properties(
-  ADIOS2 PROPERTIES
-  TYPE OPTIONAL
-  DESCRIPTION "Adaptable Input/Output (I/O) System."
-  URL "https://adios2.readthedocs.io/en/latest/"
-  PURPOSE "IO, including in parallel"
-)
 
 if(DOLFINX_ENABLE_SLEPC)
   find_package(PkgConfig REQUIRED)
@@ -298,7 +388,11 @@ if(DOLFINX_ENABLE_SLEPC)
   set(ENV{PKG_CONFIG_PATH}
       "$ENV{PETSC_DIR}/$ENV{PETSC_ARCH}:$ENV{PETSC_DIR}:$ENV{PKG_CONFIG_PATH}"
   )
-  pkg_search_module(SLEPC IMPORTED_TARGET slepc>=3.15)
+  if(_REQUIRE_SLEPC)
+    pkg_search_module(SLEPC REQUIRED IMPORTED_TARGET slepc>=3.15)
+  else()
+    pkg_search_module(SLEPC IMPORTED_TARGET slepc>=3.15)
+  endif()
 
   # Setting for FeatureSummary
   if(SLEPC_FOUND)
@@ -311,50 +405,27 @@ if(DOLFINX_ENABLE_SLEPC)
   endif()
 endif()
 
-set_package_properties(
-  SLEPc PROPERTIES
-  TYPE RECOMMENDED
-  DESCRIPTION "Scalable Library for Eigenvalue Problem Computations"
-  URL "http://slepc.upv.es/"
-  PURPOSE "Eigenvalue computation"
-)
-
-if(DOLFINX_ENABLE_SCOTCH)
+if(DOLFINX_ENABLE_SCOTCH AND _REQUIRE_SCOTCH)
+  find_package(SCOTCH REQUIRED)
+elseif(DOLFINX_ENABLE_SCOTCH)
   find_package(SCOTCH)
 endif()
 
-set_package_properties(
-  SCOTCH PROPERTIES
-  TYPE OPTIONAL
-  DESCRIPTION
-    "Programs and libraries for graph, mesh and hypergraph partitioning"
-  URL "https://www.labri.fr/perso/pelegrin/scotch"
-  PURPOSE "Parallel graph partitioning"
-)
-
-if(DOLFINX_ENABLE_PARMETIS)
+if(DOLFINX_ENABLE_PARMETIS AND _REQUIRE_PARMETIS)
+  find_package(ParMETIS 4.0.2 REQUIRED)
+elseif(DOLFINX_ENABLE_PARMETIS)
   find_package(ParMETIS 4.0.2)
 endif()
 
-set_package_properties(
-  ParMETIS PROPERTIES
-  TYPE RECOMMENDED
-  DESCRIPTION "Parallel Graph Partitioning and Fill-reducing Matrix Ordering"
-  URL "http://glaros.dtc.umn.edu/gkhome/metis/parmetis/overview"
-  PURPOSE "Parallel graph partitioning"
-)
-
-if(DOLFINX_ENABLE_KAHIP)
+if(DOLFINX_ENABLE_KAHIP AND _REQUIRE_KAHIP)
+  find_package(KaHIP REQUIRED)
+elseif(DOLFINX_ENABLE_KAHIP)
   find_package(KaHIP)
 endif()
 
-set_package_properties(
-  KaHIP PROPERTIES
-  TYPE OPTIONAL
-  DESCRIPTION "A family of graph partitioning programs"
-  URL "https://kahip.github.io/"
-  PURPOSE "Parallel graph partitioning"
-)
+# ------------------------------------------------------------------------------
+# Print summary of found and not found optional packages
+feature_summary(WHAT ALL)
 
 # Check that at least one graph partitioner has been found
 if(NOT SCOTCH_FOUND
@@ -376,10 +447,6 @@ set_package_properties(CUDAToolkit PROPERTIES TYPE OPTIONAL
   URL "https://developer.nvidia.com/cuda-toolkit"
   PURPOSE "Enables GPU-accelerated computing"
 )
-
-# ------------------------------------------------------------------------------
-# Print summary of found and not found optional packages
-feature_summary(WHAT ALL)
 
 # ------------------------------------------------------------------------------
 # Installation of DOLFINx library
