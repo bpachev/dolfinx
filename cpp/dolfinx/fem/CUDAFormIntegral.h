@@ -1638,7 +1638,7 @@ private:
   /// Host-side storage for element vector or matrix values, which is
   /// used for kernels that only perform local assembly on a CUDA
   /// device, but perform global assembly on the host.
-  std::vector<T> _element_values;
+  std::vector<PetscScalar> _element_values;
 
   /// Device-side storage for element vector or matrix values, which
   /// is used for kernels that only perform local assembly on a CUDA

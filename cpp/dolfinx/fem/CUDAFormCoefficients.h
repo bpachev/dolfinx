@@ -335,7 +335,7 @@ public:
   /// @param[in] form_coefficient The object to be moved
   CUDAFormCoefficients(
     CUDAFormCoefficients&& form_coefficients)
-    : _coefficients(form_coefficients._coefficients)
+    : _coefficients(std::move(form_coefficients._coefficients))
     , _dofmaps_num_dofs_per_cell(form_coefficients._dofmaps_num_dofs_per_cell)
     , _dofmaps_dofs_per_cell(form_coefficients._dofmaps_dofs_per_cell)
     , _coefficient_values_offsets(form_coefficients._coefficient_values_offsets)
@@ -345,7 +345,6 @@ public:
     , _page_lock(form_coefficients._page_lock)
     , _dpacked_coefficient_values(form_coefficients._dpacked_coefficient_values)
   {
-    form_coefficients._coefficients = nullptr;
     form_coefficients._dofmaps_num_dofs_per_cell = 0;
     form_coefficients._dofmaps_dofs_per_cell = 0;
     form_coefficients._coefficient_values_offsets = 0;
@@ -362,7 +361,7 @@ public:
   CUDAFormCoefficients& operator=(
     CUDAFormCoefficients&& form_coefficients)
   {
-    _coefficients = form_coefficients._coefficients;
+    _coefficients = std::move(form_coefficients._coefficients);
     _dofmaps_num_dofs_per_cell = form_coefficients._dofmaps_num_dofs_per_cell;
     _dofmaps_dofs_per_cell = form_coefficients._dofmaps_dofs_per_cell;
     _coefficient_values_offsets = form_coefficients._coefficient_values_offsets;
@@ -372,7 +371,6 @@ public:
     _page_lock = form_coefficients._page_lock;
     std::swap(_host_coefficient_values, form_coefficients._host_coefficient_values);
     _dpacked_coefficient_values = form_coefficients._dpacked_coefficient_values;
-    form_coefficients._coefficients = nullptr;
     form_coefficients._dofmaps_num_dofs_per_cell = 0;
     form_coefficients._dofmaps_dofs_per_cell = 0;
     form_coefficients._coefficient_values_offsets = 0;
