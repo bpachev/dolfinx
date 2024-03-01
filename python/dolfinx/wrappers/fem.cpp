@@ -816,6 +816,9 @@ void declare_cuda_objects(nb::module_& m)
 {
   import_petsc4py();
 
+  nb::class_<dolfinx::CUDA::Context>(m, "CUDAContext", "CUDA Context")
+      .def("__init__", [](dolfinx::CUDA::Context* c) { new (c) dolfinx::CUDA::Context();});
+
   nb::class_<dolfinx::la::CUDAMatrix>(m, "CUDAMatrix", "Matrix object on GPU")
       .def(
           "__init__",
