@@ -144,6 +144,8 @@ std::string compile_cuda_cpp_to_ptx(
   bool verbose);
 
 void safeMemcpyDtoH(void * dstHost, CUdeviceptr srcDevice, size_t ByteCount);
+void safeDeviceGetAttribute(int * res, CUdevice_attribute attr, CUdevice dev);
+CUjit_target get_cujit_target(const Context& cuda_context);
 
 #endif
 

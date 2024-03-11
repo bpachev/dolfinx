@@ -255,6 +255,11 @@ void petsc_fem_module(nb::module_& m)
         nb::rv_policy::take_ownership, nb::arg("a"),
         nb::arg("types") = std::vector<std::vector<std::string>>(),
         "Create nested sparse matrix for bilinear forms.");
+#ifdef HAS_CUDA_TOOLKIT
+  m.def("create_matrix_with_fixed_pattern", dolfinx::fem::petsc::create_matrix_with_fixed_pattern<PetscReal>,
+        nb::rv_policy::take_ownership, nb::arg("a"),
+        "Create a PETSc Mat for bilnear form with finalized sparsity pattern.");
+#endif
 
   // PETSc Matrices
   m.def(

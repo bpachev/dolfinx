@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <iomanip>
 #include <iterator>
 #include <memory>
@@ -448,6 +449,59 @@ void CUDA::safeMemcpyDtoH(void * dstHost, CUdeviceptr srcDevice, size_t ByteCoun
         "cuMemcpyDtoH() failed with " + std::string(cuda_err_description) +
         " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
   } 
+}
+
+void CUDA::safeDeviceGetAttribute(int * res, CUdevice_attribute attrib, CUdevice dev)
+{
+  const char * cuda_err_description;
+  CUresult cuda_err = cuDeviceGetAttribute(res, attrib, dev);
+  if (cuda_err != CUDA_SUCCESS) {
+    cuGetErrorString(cuda_err, &cuda_err_description);
+     throw std::runtime_error(
+           "cuDeviceGetAttribute failed with " + std::string(cuda_err_description) +
+        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+  }
+}
+
+CUjit_target CUDA::get_cujit_target(const CUDA::Context& cuda_context)
+{
+  int compute_major, compute_minor;
+  CUDA::safeDeviceGetAttribute(
+            &compute_major,
+            CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+            cuda_context.device());
+  CUDA::safeDeviceGetAttribute(
+            &compute_minor,
+            CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+            cuda_context.device());
+
+  int compute_level = 10*compute_major + compute_minor;
+  std::map<int, CUjit_target> targets = {
+        {30, CU_TARGET_COMPUTE_30}, {32, CU_TARGET_COMPUTE_32},
+        {35, CU_TARGET_COMPUTE_35}, {37, CU_TARGET_COMPUTE_37},
+        {50, CU_TARGET_COMPUTE_50}, {52, CU_TARGET_COMPUTE_52},
+        {53, CU_TARGET_COMPUTE_53}, {60, CU_TARGET_COMPUTE_60},
+        {61, CU_TARGET_COMPUTE_61}, {62, CU_TARGET_COMPUTE_62},
+        {70, CU_TARGET_COMPUTE_70}, {72, CU_TARGET_COMPUTE_72},
+        {75, CU_TARGET_COMPUTE_75}, {80, CU_TARGET_COMPUTE_80},
+        {86, CU_TARGET_COMPUTE_86}, {87, CU_TARGET_COMPUTE_87},
+        {89, CU_TARGET_COMPUTE_89}, {90, CU_TARGET_COMPUTE_90}
+  }; 
+ 
+  auto it = targets.find(compute_level);
+  if (it != targets.end()) {
+      return it->second;
+  }
+  else {
+     std::cout << "Unrecognized compute level " << compute_level << "." << std::endl;
+     it = targets.lower_bound(compute_level);
+     if (it == targets.begin()) throw std::runtime_error("Compute level is too low for fallback!");
+     else {
+       it--;
+       std::cout << " Falling back to " << it->first << "." << std::endl;
+       return it->second;
+     }
+  }
 }
 
 #endif
