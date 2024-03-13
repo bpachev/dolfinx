@@ -900,7 +900,7 @@ void declare_cuda_funcs(nb::module_& m)
           std::map<dolfinx::fem::IntegralType,
                  std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
           cuda_a_form_integrals = dolfinx::fem::cuda_form_integrals(
-              cuda_context, cujit_target, form, dolfinx::fem::ASSEMBLY_KERNEL_LOOKUP_TABLE,
+              cuda_context, cujit_target, form, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
               max_threads_per_block, min_blocks_per_sm, true, NULL, true);
           dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
             cuda_context, &form);
