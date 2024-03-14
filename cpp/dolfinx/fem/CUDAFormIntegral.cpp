@@ -35,6 +35,25 @@ using namespace dolfinx::fem;
 #if defined(HAS_CUDA_TOOLKIT)
 namespace {
 
+// declarations of functions for generating code snippets
+// for use in multiple kernels
+std::string get_interior_facet_joint_dofmaps(
+  int32_t num_dofs_per_cell0,
+  int32_t num_dofs_per_cell1
+);
+
+std::string compute_interior_facet_tensor(
+ std::string tabulate_tensor_function_name,
+ int32_t num_vertices_per_cell,
+ int32_t num_coordinates_per_vertex,
+ int32_t num_dofs_per_cell0,
+ int32_t num_dofs_per_cell1,
+ int32_t num_coeffs_per_cell
+);
+
+std::string interior_facet_extra_args();
+std::string interior_facet_pack_cell_coeffs(int32_t num_coeffs_per_cell);
+
 /// CUDA C++ code for cellwise assembly of a vector from a form
 /// integral over mesh cells
 std::string cuda_kernel_assemble_vector_cell(
@@ -228,7 +247,8 @@ std::string cuda_kernel_assemble_vector(
   IntegralType integral_type,
   int32_t num_vertices_per_cell,
   int32_t num_coordinates_per_vertex,
-  int32_t num_dofs_per_cell)
+  int32_t num_dofs_per_cell,
+  int32_t num_coeffs_per_cell)
 {
   switch (integral_type) {
   case IntegralType::cell:
@@ -295,7 +315,7 @@ std::string cuda_kernel_lift_bc_cell(
     "  assert(num_dofs_per_cell0 == " + std::to_string(num_dofs_per_cell0) + ");\n"
     "  assert(num_dofs_per_cell1 == " + std::to_string(num_dofs_per_cell1) + ");\n"
     "  ufc_scalar_t Ae[" + std::to_string(num_dofs_per_cell0) + "*" + std::to_string(num_dofs_per_cell1) + "];\n"
-    "  ufc_scalar_t be[" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "  ufc_scalar_t be[" + std::to_string(num_dofs_per_cell0) + "];\n"
     "\n"
     "  for (int c = thread_idx;\n"
     "    c < num_cells;\n"
@@ -411,7 +431,7 @@ std::string cuda_kernel_lift_bc_exterior_facet(
     "  assert(num_dofs_per_cell0 == " + std::to_string(num_dofs_per_cell0) + ");\n"
     "  assert(num_dofs_per_cell1 == " + std::to_string(num_dofs_per_cell1) + ");\n"
     "  ufc_scalar_t Ae[" + std::to_string(num_dofs_per_cell0) + "*" + std::to_string(num_dofs_per_cell1) + "];\n"
-    "  ufc_scalar_t be[" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "  ufc_scalar_t be[" + std::to_string(num_dofs_per_cell0) + "];\n"
     "\n"
     "  for (int i = 2*thread_idx;\n"
     "    i < num_active_mesh_entities;\n"
@@ -484,6 +504,113 @@ std::string cuda_kernel_lift_bc_exterior_facet(
     "}";
 }
 
+/// CUDA C++ code for modifying a right-hand side vector to impose
+/// essential boundary conditions for integrals over exterior facets
+std::string cuda_kernel_lift_bc_interior_facet(
+  std::string lift_bc_kernel_name,
+  std::string tabulate_tensor_function_name,
+  int32_t num_vertices_per_cell,
+  int32_t num_coordinates_per_vertex,
+  int32_t num_dofs_per_cell0,
+  int32_t num_dofs_per_cell1,
+  int32_t num_coeffs_per_cell
+)
+{
+  // Generate the CUDA C++ code for the assembly kernel
+  return
+    "extern \"C\" void __global__\n"
+    "" + lift_bc_kernel_name + "(\n"
+    "  int32_t num_active_mesh_entities,\n"
+    "  int32_t* active_mesh_entities,\n"
+    "  int num_vertices_per_cell,\n"
+    "  const int32_t* __restrict__ vertex_indices_per_cell,\n"
+    "  int num_coordinates_per_vertex,\n"
+    "  const double* __restrict__ vertex_coordinates,\n"
+    + interior_facet_extra_args() +
+    "  int num_coeffs_per_cell,\n"
+    "  const ufc_scalar_t* __restrict__ coeffs,\n"
+    "  int num_constant_values,\n"
+    "  const ufc_scalar_t* __restrict__ constant_values,\n"
+    "  int num_dofs_per_cell0,\n"
+    "  int num_dofs_per_cell1,\n"
+    "  const int32_t* __restrict__ dofmap0,\n"
+    "  const int32_t* __restrict__ dofmap1,\n"
+    "  const char* __restrict__ bc_markers1,\n"
+    "  const char* __restrict__ bc_values1,\n"
+    "  double scale,\n"
+    "  int32_t num_columns,\n"
+    "  const ufc_scalar_t* x0,\n"
+    "  ufc_scalar_t* b)\n"
+    "{\n"
+    "  int thread_idx = blockIdx.x * blockDim.x + threadIdx.x;\n"
+    "\n"
+    "  assert(num_vertices_per_cell == " + std::to_string(num_vertices_per_cell) + ");\n"
+    "  assert(num_coordinates_per_vertex == " + std::to_string(num_coordinates_per_vertex) + ");\n"
+    "  double cell_vertex_coordinates[" + std::to_string(num_vertices_per_cell) + "*" + std::to_string(num_coordinates_per_vertex) + "];\n"
+    "\n"
+    "  assert(num_dofs_per_cell0 == " + std::to_string(num_dofs_per_cell0) + ");\n"
+    "  assert(num_dofs_per_cell1 == " + std::to_string(num_dofs_per_cell1) + ");\n"
+    "  ufc_scalar_t Ae[4*" + std::to_string(num_dofs_per_cell0) + "*" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "  ufc_scalar_t be[2*" + std::to_string(num_dofs_per_cell0) + "];\n"
+    "\n"
+    "  for (int i = 4*thread_idx;\n"
+    "    i < num_active_mesh_entities;\n"
+    "    i += 4*blockDim.x * gridDim.x)\n"
+    "  {\n"
+    "    int32_t c0 = active_mesh_entities[i];\n"
+    "    int32_t c1 = active_mesh_entities[i+2];\n"
+    "    int32_t facet0 = active_mesh_entities[i+1];\n"
+    "    int32_t facet1 = active_mesh_entities[i+3];\n"
+    "    // Skip cell if boundary conditions do not apply\n"
+    "    const int32_t* dofs10 = &dofmap1[c0*" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "    const int32_t* dofs11 = &dofmap1[c1*" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "    bool has_bc = false;\n"
+    "    for (int k = 0; k < " + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
+    "      int32_t column = dofs10[k];\n"
+    "      if (bc_markers1 && bc_markers1[column]) {\n"
+    "        has_bc = true;\n"
+    "        break;\n"
+    "      }\n"
+    "    }\n"
+    "    for (int k = 0; k < " + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
+    "      int32_t column = dofs11[k];\n"
+    "      if (bc_markers1 && bc_markers1[column]) {\n"
+    "        has_bc = true;\n"
+    "        break;\n"
+    "      }\n"
+    "    }\n"
+    "    if (!has_bc)\n"
+    "      continue;\n"
+    "\n"
+    + compute_interior_facet_tensor(
+       tabulate_tensor_function_name,
+       num_vertices_per_cell,
+       num_coordinates_per_vertex,
+       num_dofs_per_cell0,
+       num_dofs_per_cell1,
+       num_coeffs_per_cell
+    )
+    + get_interior_facet_joint_dofmaps(num_dofs_per_cell0, num_dofs_per_cell1) +
+    "\n"
+    "    // Compute modified element vector\n"
+    "    for (int k = 0; k < 2*" + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
+    "      int32_t column = dofs1[k];\n"
+    "      if (bc_markers1 && bc_markers1[column]) {\n"
+    "        ufc_scalar_t bc = bc_values1[column];\n"
+    "        for (int j = 0; j < 2*" + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
+    "          be[j] -= Ae[k*2*" + std::to_string(num_dofs_per_cell1) + "+j] * scale * (bc - x0[column]);\n"
+    "        }\n"
+    "      }\n"
+    "    }\n"
+    "\n"
+    "    // Add element vector values to the global vector\n"
+    "    for (int j = 0; j < 2*" + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
+    "      int32_t row = dofs0[j];\n"
+    "      atomicAdd(&b[row], be[j]);\n"
+    "    }\n"
+    "  }\n"
+    "}";
+}
 
 /// CUDA C++ code for assembly of a matrix from a form integral
 std::string cuda_kernel_lift_bc(
@@ -493,7 +620,8 @@ std::string cuda_kernel_lift_bc(
   int32_t num_vertices_per_cell,
   int32_t num_coordinates_per_vertex,
   int32_t num_dofs_per_cell0,
-  int32_t num_dofs_per_cell1)
+  int32_t num_dofs_per_cell1,
+  int32_t num_coeffs_per_cell)
 {
   switch (integral_type) {
   case IntegralType::cell:
@@ -519,7 +647,8 @@ std::string cuda_kernel_lift_bc(
       num_vertices_per_cell,
       num_coordinates_per_vertex,
       num_dofs_per_cell0,
-      num_dofs_per_cell1);
+      num_dofs_per_cell1,
+      num_coeffs_per_cell);
   default:
     throw std::runtime_error(
       "Forms of type " + to_string(integral_type) + " are not supported "
@@ -1228,7 +1357,7 @@ std::string cuda_kernel_assemble_matrix_exterior_facet(
 {
   // For now we don't care about the assembly_kernel_type
   // We default to the global algorithm
-  return ""
+  return 
     "extern \"C\" int printf(const char * format, ...);\n"
     "\n"
     "extern \"C\" void __global__\n"
@@ -1355,81 +1484,55 @@ std::string cuda_kernel_assemble_matrix_exterior_facet(
     "}\n";  
 }
 
-std::string cuda_kernel_assemble_matrix_interior_facet(
-  std::string assembly_kernel_name,
-  std::string tabulate_tensor_function_name,
-  int32_t max_threads_per_block,
-  int32_t min_blocks_per_multiprocessor,
-  int32_t num_vertices_per_cell,
-  int32_t num_coordinates_per_vertex,
-  int32_t num_dofs_per_cell0,
-  int32_t num_dofs_per_cell1,
-  enum assembly_kernel_type assembly_kernel_type
+// For cell and exterior facet integrals, packed coefficients
+// are stored in contiguous blocks pertaining to a single cell
+// However, interior facets require that values from each cell 
+// are stored side by side e.g. (a1b1c1a2b2c2 -> a1a2b1b2c1c2)
+// Instead of precomputing different arrays for each domain id,
+// we simply do the interlacing on the fly to reduce the number of kernels
+// and GPU memory usage
+// returns a snippet that can be used inside a larger function
+std::string interior_facet_pack_cell_coeffs(int32_t num_coeffs_per_cell)
+{
+  if (num_coeffs_per_cell <= 0)
+    return "ufc_scalar_t* cell_coeffs = NULL;\n";
+  return 
+  "  ufc_scalar_t cell_coeffs[2*"+std::to_string(num_coeffs_per_cell)+"];\n"
+  "  const ufc_scalar_t* cell_coeffs0 = coeffs[c0*num_coeffs_per_cell];\n"
+  "  const ufc_scalar_t* cell_coeffs1 = coeffs[c1*num_coeffs_per_cell];\n"
+  "  for (int j = 0; j < num_coefficients; j++) {\n"
+  "    int offset = coefficient_values_offsets[j];\n"
+  "    int coeff_size = coefficient_values_offsets[j+1]-offset;\n"
+  "    for (int k = 0; k < coeff_size; k++) {\n"
+  "      cell_coeffs[2*offset + k] = cell_coeffs0[offset+k];\n"
+  "      cell_coeffs[2*offset + coeff_size + k] = cell_coeffs1[offset+k];\n"
+  "    }\n"
+  "  }\n";
+}
+
+// args needed for interior facet
+
+std::string interior_facet_extra_args()
+{
+  return 
+  "  int32_t num_mesh_entities_per_cell,\n"
+  "  const uint8_t* __restrict__ facet_permutations,\n"
+  "  int num_coefficients,\n"
+  "  const int* coefficient_values_offsets,\n";
+}
+
+// body of tensor assembly for interior facet
+std::string compute_interior_facet_tensor(
+ std::string tabulate_tensor_function_name, 
+ int32_t num_vertices_per_cell,
+ int32_t num_coordinates_per_vertex,
+ int32_t num_dofs_per_cell0,
+ int32_t num_dofs_per_cell1,
+ int32_t num_coeffs_per_cell
 )
 {
-
-  return ""
-    "extern \"C\" int printf(const char * format, ...);\n"
-    "\n"
-    "extern \"C\" void __global__\n"
-    "" + assembly_kernel_name + "(\n"
-    "  int32_t num_active_mesh_entities,\n"
-    "  const int32_t* __restrict__ active_mesh_entities,\n"
-    "  int num_vertices_per_cell,\n"
-    "  const int32_t* __restrict__ vertex_indices_per_cell,\n"
-    "  int num_coordinates_per_vertex,\n"
-    "  const double* __restrict__ vertex_coordinates,\n"
-    "  int32_t num_mesh_entities_per_cell,\n"
-    "  int num_coeffs_per_cell,\n"
-    "  const ufc_scalar_t* __restrict__ coeffs,\n"
-    "  const ufc_scalar_t* __restrict__ constant_values,\n"
-    "  const uint8_t* __restrict__ facet_permutations,\n"
-    "  int num_dofs_per_cell0,\n"
-    "  int num_dofs_per_cell1,\n"
-    "  const int32_t* __restrict__ dofmap0,\n"
-    "  const int32_t* __restrict__ dofmap1,\n"
-    "  const char* __restrict__ bc0,\n"
-    "  const char* __restrict__ bc1,\n"
-    "  int32_t num_local_rows,\n"
-    "  int32_t num_local_columns,\n"
-    "  const int32_t* __restrict__ row_ptr,\n"
-    "  const int32_t* __restrict__ column_indices,\n"
-    "  ufc_scalar_t* __restrict__ values,\n"
-    "  const int32_t* __restrict__ offdiag_row_ptr,\n"
-    "  const int32_t* __restrict__ offdiag_column_indices,\n"
-    "  ufc_scalar_t* __restrict__ offdiag_values,\n"
-    "  int32_t num_local_offdiag_columns,\n"
-    "  const int32_t* __restrict__ colmap)\n"
-    "{\n"
-    "  int thread_idx = blockIdx.x * blockDim.x + threadIdx.x;\n"
-    "\n"
-    "  assert(num_vertices_per_cell == " + std::to_string(num_vertices_per_cell) + ");\n"
-    "  assert(num_coordinates_per_vertex == " + std::to_string(num_coordinates_per_vertex) + ");\n"
-    "  double cell_vertex_coordinates[2*" + std::to_string(num_vertices_per_cell) + "*" + std::to_string(num_coordinates_per_vertex) + "];\n"
-    "\n"
-    "  assert(num_dofs_per_cell0 == " + std::to_string(num_dofs_per_cell0) + ");\n"
-    "  assert(num_dofs_per_cell1 == " + std::to_string(num_dofs_per_cell1) + ");\n"
-    "  ufc_scalar_t Ae[4*" + std::to_string(num_dofs_per_cell0) + "*" + std::to_string(num_dofs_per_cell1) + "];\n"
-    " \n"
-    "  for (int i = 4*thread_idx;\n"
-    "    i < num_active_mesh_entities;\n"
-    "    i += 4*blockDim.x * gridDim.x)\n"
-    "  {\n"
-    "    int32_t c0 = active_mesh_entities[i];\n"
-    "    int32_t c1 = active_mesh_entities[i+2];\n"
-    "    int32_t facet0 = active_mesh_entities[i+1];\n"
-    "    int32_t facet1 = active_mesh_entities[i+3];\n"
-    "\n"
-    "    // Set element matrix values to zero\n"
-    "    for (int j = 0; j < 2*" + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
-    "      for (int k = 0; k < 2*" + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
-    "        Ae[2*j*" + std::to_string(num_dofs_per_cell1) + "+k] = 0.0;\n"
-    "      }\n"
-    "    }\n"
-    "\n"
-    "    // This shouldn't work - not here or in the exterior facet code. . . .  \n"
-    "    const ufc_scalar_t* coeff_cell = &coeffs[c0*num_coeffs_per_cell];\n"
-    "\n"
+  return
+    interior_facet_pack_cell_coeffs(num_coeffs_per_cell) + 
     "    // Gather cell vertex coordinates\n"
     "    for (int j = 0; j < " + std::to_string(num_vertices_per_cell) + "; j++) {\n"
     "      int vertex = vertex_indices_per_cell[\n"
@@ -1454,28 +1557,137 @@ std::string cuda_kernel_assemble_matrix_interior_facet(
     "      quadrature_permutation[1] = facet_permutations[c1*num_mesh_entities_per_cell + facet1];\n"
     "    }\n"
     "    else {\n"
-    "      quadrature_permutations[0] = quadrature_permutations[1] = 0;\n"
+    "      quadrature_permutation[0] = quadrature_permutation[1] = 0;\n"
     "    }\n" 
     "\n"
     "    int32_t local_mesh_entities[2] = {facet0, facet1};"
     "    // Compute element matrix\n"
     "    " + tabulate_tensor_function_name + "(\n"
     "      Ae,\n"
-    "      coeff_cell,\n"
+    "      cell_coeffs,\n"
     "      constant_values,\n"
     "      cell_vertex_coordinates,\n"
-    "      &local_mesh_entity,\n"
-    "      quadrature_permutation);\n"
+    "      local_mesh_entities,\n"
+    "      quadrature_permutation);\n";
+
+}
+
+std::string get_interior_facet_joint_dofmaps(
+  int32_t num_dofs_per_cell0,
+  int32_t num_dofs_per_cell1
+)
+{
+  return 
+    "    int32_t dofs0[2*"+std::to_string(num_dofs_per_cell0)+"];\n"
+    "    int32_t dofs1[2*"+std::to_string(num_dofs_per_cell1)+"];\n"
+    "    {\n"
+    "      const int32_t* dofs11 = &dofmap1[c1*" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "      const int32_t* dofs00 = &dofmap0[c0*" + std::to_string(num_dofs_per_cell0) + "];\n"
+    "      const int32_t* dofs01 = &dofmap0[c1*" + std::to_string(num_dofs_per_cell0) + "];\n"
+    "      const int32_t* dofs10 = &dofmap1[c0*" + std::to_string(num_dofs_per_cell1) + "];\n"
+    "      for (int j = 0; j < " + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
+    "        dofs0[j] = dofs00[j];\n"
+    "        dofs0[j+"+std::to_string(num_dofs_per_cell0)+"] = dofs01[j];\n"
+    "      }\n"
+    "      for (int j = 0; j < " + std::to_string(num_dofs_per_cell1) + "; j++) {\n"
+    "        dofs1[j] = dofs10[j];\n"
+    "        dofs1[j+"+std::to_string(num_dofs_per_cell1)+"] = dofs11[j];\n"
+    "      }\n"
+    "    }\n";
+}
+
+
+std::string cuda_kernel_assemble_matrix_interior_facet(
+  std::string assembly_kernel_name,
+  std::string tabulate_tensor_function_name,
+  int32_t max_threads_per_block,
+  int32_t min_blocks_per_multiprocessor,
+  int32_t num_vertices_per_cell,
+  int32_t num_coordinates_per_vertex,
+  int32_t num_dofs_per_cell0,
+  int32_t num_dofs_per_cell1,
+  int32_t num_coeffs_per_cell,
+  enum assembly_kernel_type assembly_kernel_type
+)
+{
+
+  return ""
+    "extern \"C\" int printf(const char * format, ...);\n"
+    "\n"
+    "extern \"C\" void __global__\n"
+    "" + assembly_kernel_name + "(\n"
+    "  int32_t num_active_mesh_entities,\n"
+    "  const int32_t* __restrict__ active_mesh_entities,\n"
+    "  int num_vertices_per_cell,\n"
+    "  const int32_t* __restrict__ vertex_indices_per_cell,\n"
+    "  int num_coordinates_per_vertex,\n"
+    "  const double* __restrict__ vertex_coordinates,\n"
+    + interior_facet_extra_args() +
+    "  int num_coeffs_per_cell,\n"
+    "  const ufc_scalar_t* __restrict__ coeffs,\n"
+    "  const ufc_scalar_t* __restrict__ constant_values,\n"
+    "  int num_dofs_per_cell0,\n"
+    "  int num_dofs_per_cell1,\n"
+    "  const int32_t* __restrict__ dofmap0,\n"
+    "  const int32_t* __restrict__ dofmap1,\n"
+    "  const char* __restrict__ bc0,\n"
+    "  const char* __restrict__ bc1,\n"
+    "  int32_t num_local_rows,\n"
+    "  int32_t num_local_columns,\n"
+    "  const int32_t* __restrict__ row_ptr,\n"
+    "  const int32_t* __restrict__ column_indices,\n"
+    "  ufc_scalar_t* __restrict__ values,\n"
+    "  const int32_t* __restrict__ offdiag_row_ptr,\n"
+    "  const int32_t* __restrict__ offdiag_column_indices,\n"
+    "  ufc_scalar_t* __restrict__ offdiag_values,\n"
+    "  int32_t num_local_offdiag_columns,\n"
+    "  const int32_t* __restrict__ colmap)\n"
+    "{\n"
+    "  int thread_idx = blockIdx.x * blockDim.x + threadIdx.x;\n"
+    "\n"
+    "  assert(num_vertices_per_cell == " + std::to_string(num_vertices_per_cell) + ");\n"
+    "  assert(num_coordinates_per_vertex == " + std::to_string(num_coordinates_per_vertex) + ");\n"
+    "  assert(num_coeffs_per_cell == " + std::to_string(num_coeffs_per_cell) + ");\n"
+    "  double cell_vertex_coordinates[2*" + std::to_string(num_vertices_per_cell) + "*" + std::to_string(num_coordinates_per_vertex) + "];\n"
+    "\n"
+    "  assert(num_dofs_per_cell0 == " + std::to_string(num_dofs_per_cell0) + ");\n"
+    "  assert(num_dofs_per_cell1 == " + std::to_string(num_dofs_per_cell1) + ");\n"
+    "  ufc_scalar_t Ae[4*" + std::to_string(num_dofs_per_cell0) + "*" + std::to_string(num_dofs_per_cell1) + "];\n"
+    " \n"
+    "  for (int i = 4*thread_idx;\n"
+    "    i < num_active_mesh_entities;\n"
+    "    i += 4*blockDim.x * gridDim.x)\n"
+    "  {\n"
+    "    int32_t c0 = active_mesh_entities[i];\n"
+    "    int32_t c1 = active_mesh_entities[i+2];\n"
+    "    int32_t facet0 = active_mesh_entities[i+1];\n"
+    "    int32_t facet1 = active_mesh_entities[i+3];\n"
+    "\n"
+    "    // Set element matrix values to zero\n"
+    "    for (int j = 0; j < 2*" + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
+    "      for (int k = 0; k < 2*" + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
+    "        Ae[2*j*" + std::to_string(num_dofs_per_cell1) + "+k] = 0.0;\n"
+    "      }\n"
+    "    }\n"
+    "\n"
+    + compute_interior_facet_tensor(
+       tabulate_tensor_function_name, 
+       num_vertices_per_cell,
+       num_coordinates_per_vertex,
+       num_dofs_per_cell0,
+       num_dofs_per_cell1,
+       num_coeffs_per_cell
+    )
+    + get_interior_facet_joint_dofmaps(num_dofs_per_cell0, num_dofs_per_cell1) +
     "    // Add element matrix values to the global matrix,\n"
     "    // skipping entries related to degrees of freedom\n"
     "    // that are subject to essential boundary conditions.\n"
-    "    const int32_t* dofs0 = &dofmap0[c*" + std::to_string(num_dofs_per_cell0) + "];\n"
-    "    const int32_t* dofs1 = &dofmap1[c*" + std::to_string(num_dofs_per_cell1) + "];\n"
-    "    for (int j = 0; j < " + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
+    "\n"
+    "    for (int j = 0; j < 2*" + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
     "      int32_t row = dofs0[j];\n"
     "      if (bc0 && bc0[row]) continue;\n"
     "      if (row < num_local_rows) {\n"
-    "        for (int k = 0; k < " + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
+    "        for (int k = 0; k < 2*" + std::to_string(num_dofs_per_cell1) + "; k++) {\n"
     "          int32_t column = dofs1[k];\n"
     "          if (bc1 && bc1[column]) continue;\n"
     "          if (column < num_local_columns) {\n"
@@ -1487,7 +1699,7 @@ std::string cuda_kernel_assemble_matrix_interior_facet(
     "            assert(!err && \"Failed to find column index!\");\n"
     "            r += row_ptr[row];\n"
     "            atomicAdd(&values[r],\n"
-    "              Ae[j*" + std::to_string(num_dofs_per_cell1) + "+k]);\n"
+    "              Ae[j*2*" + std::to_string(num_dofs_per_cell1) + "+k]);\n"
     "          } else {\n"
     "            /* Search for the correct column index in the column map\n"
     "             * of the off-diagonal part of the local matrix. */\n"
@@ -1507,7 +1719,7 @@ std::string cuda_kernel_assemble_matrix_interior_facet(
     "            assert(!err && \"Failed to find column index!\");\n"
     "            r += offdiag_row_ptr[row];\n"
     "            atomicAdd(&offdiag_values[r],\n"
-    "              Ae[j*" + std::to_string(num_dofs_per_cell1) + "+k]);\n"
+    "              Ae[j*2*" + std::to_string(num_dofs_per_cell1) + "+k]);\n"
     "          }\n"
     "        }\n"
     "      }\n"
@@ -1527,6 +1739,7 @@ std::string cuda_kernel_assemble_matrix(
   int32_t num_coordinates_per_vertex,
   int32_t num_dofs_per_cell0,
   int32_t num_dofs_per_cell1,
+  int32_t num_coeffs_per_cell,
   enum assembly_kernel_type assembly_kernel_type)
 {
   switch (integral_type) {
@@ -1562,6 +1775,7 @@ std::string cuda_kernel_assemble_matrix(
       num_coordinates_per_vertex,
       num_dofs_per_cell0,
       num_dofs_per_cell1,
+      num_coeffs_per_cell,
       assembly_kernel_type);
   default:
     throw std::runtime_error(
@@ -1737,6 +1951,7 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
   int32_t num_coordinates_per_vertex,
   int32_t num_dofs_per_cell0,
   int32_t num_dofs_per_cell1,
+  int32_t num_coeffs_per_cell,
   enum assembly_kernel_type assembly_kernel_type,
   bool debug,
   const char* cudasrcdir,
@@ -1782,7 +1997,9 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
       integral_type,
       num_vertices_per_cell,
       num_coordinates_per_vertex,
-      num_dofs_per_cell0) + "\n";
+      num_dofs_per_cell0,
+      num_coeffs_per_cell
+      ) + "\n";
     break;
   case 2:
     assembly_kernel_src += cuda_kernel_binary_search() + "\n"
@@ -1797,6 +2014,7 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
       num_coordinates_per_vertex,
       num_dofs_per_cell0,
       num_dofs_per_cell1,
+      num_coeffs_per_cell,
       assembly_kernel_type) + "\n"
       "\n";
     assembly_kernel_src += cuda_kernel_lift_bc(
@@ -1806,7 +2024,9 @@ CUDA::Module dolfinx::fem::compile_form_integral_kernel(
       num_vertices_per_cell,
       num_coordinates_per_vertex,
       num_dofs_per_cell0,
-      num_dofs_per_cell1) + "\n";
+      num_dofs_per_cell1,
+      num_coeffs_per_cell
+      ) + "\n";
     break;
   default:
     throw std::runtime_error(

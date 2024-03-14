@@ -461,7 +461,7 @@ void lift_bc_cell(
 //-----------------------------------------------------------------------------
 template <dolfinx::scalar T,
           std::floating_point U = dolfinx::scalar_value_type_t<T>>
-void lift_bc_exterior_facet(
+void lift_bc_facet(
   const CUDA::Context& cuda_context,
   CUfunction kernel,
   const dolfinx::mesh::CUDAMesh<U>& mesh,
@@ -475,7 +475,8 @@ void lift_bc_exterior_facet(
   dolfinx::la::CUDAVector& b,
   bool verbose,
   std::int32_t num_mesh_entities,
-  CUdeviceptr mesh_entities)
+  CUdeviceptr mesh_entities,
+  bool interior)
 {
   CUresult cuda_err;
   const char * cuda_err_description;
@@ -530,18 +531,36 @@ void lift_bc_exterior_facet(
 
   // Launch device-side kernel to compute element matrices
   (void) cuda_context;
-  void * kernel_parameters[] = {
+  std::vector<void*> kernel_parameters;
+  kernel_parameters.insert(
+    kernel_parameters.end(), {
     &num_mesh_entities,
     &mesh_entities,
     &num_vertices_per_cell,
     &dvertex_indices_per_cell,
     &num_coordinates_per_vertex,
-    &dvertex_coordinates,
+    &dvertex_coordinates});
+ 
+  if (interior) {
+    std::int32_t tdim = mesh.tdim();
+    const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
+    std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
+    CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
+    CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
+    std::int32_t num_coefficients = coefficients.num_coefficients();
+    kernel_parameters.insert(kernel_parameters.end(), {
+      &num_mesh_entities_per_cell,
+      &dfacet_permutations,
+      &num_coefficients,
+      &coefficient_values_offsets});
+  }
+
+  kernel_parameters.insert(
+    kernel_parameters.end(), {
     &num_coefficient_values_per_cell,
     &dcoefficient_values,
     &num_constant_values,
     &dconstant_values,
-   // &dcell_permutations,
     &num_dofs_per_cell0,
     &num_dofs_per_cell1,
     &ddofmap0,
@@ -551,12 +570,12 @@ void lift_bc_exterior_facet(
     &scale,
     &num_columns,
     &dx0,
-    &db};
+    &db});
   cuda_err = launch_cuda_kernel(
     kernel, grid_dim_x, grid_dim_y, grid_dim_z,
     block_dim_x, block_dim_y, block_dim_z,
     shared_mem_size_per_thread_block,
-    stream, kernel_parameters, NULL, verbose);
+    stream, kernel_parameters.data(), NULL, verbose);
   if (cuda_err != CUDA_SUCCESS) {
     cuGetErrorString(cuda_err, &cuda_err_description);
     throw std::runtime_error(
@@ -577,8 +596,6 @@ void lift_bc_exterior_facet(
   x0.restore_values();
 }
 
-
-
 CUDA::Module compile_form_integral_kernel(
   const CUDA::Context& cuda_context,
   CUjit_target target,
@@ -593,6 +610,7 @@ CUDA::Module compile_form_integral_kernel(
   int32_t num_coordinates_per_vertex,
   int32_t num_dofs_per_cell0,
   int32_t num_dofs_per_cell1,
+  int32_t num_coeffs_per_cell,
   enum assembly_kernel_type assembly_kernel_type,
   bool debug,
   const char* cudasrcdir,
@@ -692,6 +710,7 @@ public:
                          num_coordinates_per_vertex,
                          num_dofs_per_cell0,
                          num_dofs_per_cell1,
+                         form.coefficient_offsets().back(),
                          assembly_kernel_type,
                          debug, cudasrcdir, verbose, _name))
     , _assembly_kernel_type(assembly_kernel_type)
@@ -996,18 +1015,21 @@ public:
   {
     CUresult cuda_err;
     const char * cuda_err_description;
-
+    bool interior = false;
     switch (_integral_type) {
     case IntegralType::cell:
       lift_bc_cell(
         cuda_context, _lift_bc_kernel, mesh, dofmap0, dofmap1,
         bc1, constants, coefficients, scale, x0, b, verbose);
       break;
+    case IntegralType::interior_facet:
+      interior = true;
     case IntegralType::exterior_facet:
-      lift_bc_exterior_facet(
+      lift_bc_facet(
         cuda_context, _lift_bc_kernel, mesh, dofmap0, dofmap1,
         bc1, constants, coefficients, scale, x0, b, verbose,
-        _num_mesh_entities + _num_mesh_ghost_entities, _dmesh_entities);
+        _num_mesh_entities + _num_mesh_ghost_entities, _dmesh_entities,
+        interior);
       break;
     default:
       throw std::runtime_error(
@@ -1540,7 +1562,9 @@ public:
     const dolfinx::fem::CUDAFormConstants<T>& constants,
     const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAMatrix& A,
-    bool verbose)
+    bool verbose,
+    bool interior
+    )
   {
     CUresult cuda_err;
     const char * cuda_err_description;
@@ -1609,13 +1633,29 @@ public:
     // Launch device-side kernel to compute element matrices and
     // perform global assembly
     (void) cuda_context;
-    void * kernel_parameters[] = {
+    std::vector<void*> kernel_parameters;
+    kernel_parameters.insert(kernel_parameters.end(), {
       &num_mesh_entities,
       &mesh_entities,
       &num_vertices_per_cell,
       &dvertex_indices_per_cell,
       &num_coordinates_per_vertex,
-      &dvertex_coordinates,
+      &dvertex_coordinates});
+    if (interior)
+    {
+      std::int32_t tdim = mesh.tdim();
+      const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
+      std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
+      CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
+      CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
+      std::int32_t num_coefficients = coefficients.num_coefficients();
+      kernel_parameters.insert(kernel_parameters.end(), {
+      &num_mesh_entities_per_cell,
+      &dfacet_permutations,
+      &num_coefficients,
+      &coefficient_values_offsets});
+    }
+    kernel_parameters.insert(kernel_parameters.end(), {
       &num_coefficient_values_per_cell,
       &dcoefficient_values,
       &dconstant_values,
@@ -1634,12 +1674,13 @@ public:
       &doffdiag_column_indices,
       &doffdiag_values,
       &num_local_offdiag_columns,
-      &dcolmap};
+      &dcolmap});
+
     cuda_err = launch_cuda_kernel(
       kernel, grid_dim_x, grid_dim_y, grid_dim_z,
       block_dim_x, block_dim_y, block_dim_z,
       shared_mem_size_per_thread_block,
-      stream, kernel_parameters, NULL, verbose);
+      stream, kernel_parameters.data(), NULL, verbose);
     if (cuda_err != CUDA_SUCCESS) {
       cuGetErrorString(cuda_err, &cuda_err_description);
       throw std::runtime_error(
@@ -1673,12 +1714,14 @@ public:
   {
 
     // special handling for facet integrals
+    bool interior = false;
     switch (_integral_type) {
-    case IntegralType::exterior_facet:
     case IntegralType::interior_facet:
+      interior = true;
+    case IntegralType::exterior_facet:
       return assemble_matrix_facet(
         cuda_context, mesh, dofmap0, dofmap1, bc0, bc1,
-        constants, coefficients, A, verbose
+        constants, coefficients, A, verbose, interior
       );
     default:
       break;
