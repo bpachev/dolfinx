@@ -1498,8 +1498,8 @@ std::string interior_facet_pack_cell_coeffs(int32_t num_coeffs_per_cell)
     return "ufc_scalar_t* cell_coeffs = NULL;\n";
   return 
   "  ufc_scalar_t cell_coeffs[2*"+std::to_string(num_coeffs_per_cell)+"];\n"
-  "  const ufc_scalar_t* cell_coeffs0 = coeffs[c0*num_coeffs_per_cell];\n"
-  "  const ufc_scalar_t* cell_coeffs1 = coeffs[c1*num_coeffs_per_cell];\n"
+  "  const ufc_scalar_t* cell_coeffs0 = &coeffs[c0*num_coeffs_per_cell];\n"
+  "  const ufc_scalar_t* cell_coeffs1 = &coeffs[c1*num_coeffs_per_cell];\n"
   "  for (int j = 0; j < num_coefficients; j++) {\n"
   "    int offset = coefficient_values_offsets[j];\n"
   "    int coeff_size = coefficient_values_offsets[j+1]-offset;\n"

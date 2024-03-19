@@ -96,6 +96,11 @@ def _assemble_matrix_petsc(
     tmpdir = tempfile.TemporaryDirectory()
     assembler = _cpp.fem.CUDAAssembler(ctx, tmpdir.name)
     bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
+    coeffs = a._cpp_object.coefficients
+    for space in a._cpp_object.function_spaces:
+       _cpp.fem.copy_function_space_to_device(ctx, space)
+    for c in coeffs:
+      _cpp.fem.copy_function_space_to_device(ctx, c.function_space)
     # TODO properly handle packing of coefficients and constants
     _cpp.fem.assemble_matrix_on_device(ctx, assembler, a._cpp_object, A, bcs)
     #constants = _pack_constants(a._cpp_object) if constants is None else constants
