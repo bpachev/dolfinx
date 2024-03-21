@@ -11,8 +11,19 @@ from dolfinx import la
 from dolfinx.fem.bcs import DirichletBC
 from dolfinx.fem.forms import Form
 from dolfinx.fem.function import Function, FunctionSpace
+from dolfinx.fem.petsc import create_vector as create_petsc_vector
 from petsc4py import PETSc
 
+
+
+
+def init_device():
+  """Initialize PETSc device
+  """
+
+  d = PETSc.Device()
+  d.create(PETSc.Device.Type.CUDA)
+  return d
 
 def to_device(obj: typing.Union[Function, FunctionSpace]):
    """Copy an object needed for assembly to the GPU
@@ -113,5 +124,24 @@ def _assemble_matrix_petsc(
     #    _cpp.fem.insert_diagonal(A._cpp_object, a.function_spaces[0], bcs, diagonal)
     return A
 
+def assemble_vector(b: Form, constants=None, coeffs=None):
+    """Assemble linear form into vector on GPU
 
+    Args:
+        b: the linear form to use for assembly
+        constants: Form constants
+        coeffs: Form coefficients
+    """
 
+    ctx = _cpp.fem.CUDAContext()
+    tmpdir = tempfile.TemporaryDirectory()
+    assembler = _cpp.fem.CUDAAssembler(ctx, tmpdir.name)
+    coeffs = b._cpp_object.coefficients
+    for space in b._cpp_object.function_spaces:
+       _cpp.fem.copy_function_space_to_device(ctx, space)
+    for c in coeffs:
+       _cpp.fem.copy_function_space_to_device(ctx, c.function_space)
+
+    vec = create_petsc_vector(b)
+    _cpp.fem.assemble_vector_on_device(ctx, assembler, b._cpp_object, vec)
+    return vec

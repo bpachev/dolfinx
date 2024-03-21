@@ -111,7 +111,7 @@ void assemble_vector_cell(
   CUdeviceptr dactive_mesh_entities,
   const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+ // const dolfinx::fem::CUDADirichletBC<T,U>& bc,
   const dolfinx::fem::CUDAFormConstants<T>& constants,
   const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAVector& cuda_vector,
@@ -139,7 +139,7 @@ void assemble_vector_cell(
   // Mapping of cellwise to global degrees of freedom and Dirichlet boundary conditions
   int num_dofs_per_cell = dofmap.num_dofs_per_cell();
   CUdeviceptr ddofmap = dofmap.dofs_per_cell();
-  CUdeviceptr dbc = bc.dof_markers();
+ // CUdeviceptr dbc = bc.dof_markers();
 
   // Global vector
   std::int32_t num_values = cuda_vector.num_values();
@@ -186,7 +186,7 @@ void assemble_vector_cell(
     &dcoefficient_values,
     &num_dofs_per_cell,
     &ddofmap,
-    &dbc,
+   // &dbc,
     &num_values,
     &dvalues};
 
@@ -216,18 +216,19 @@ void assemble_vector_cell(
 //-----------------------------------------------------------------------------
 template <dolfinx::scalar T,
           std::floating_point U = dolfinx::scalar_value_type_t<T>>
-void assemble_vector_exterior_facet(
+void assemble_vector_facet(
   const CUDA::Context& cuda_context,
   CUfunction kernel,
   std::int32_t num_active_mesh_entities,
   CUdeviceptr dactive_mesh_entities,
   const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+ // const dolfinx::fem::CUDADirichletBC<T,U>& bc,
   const dolfinx::fem::CUDAFormConstants<T>& constants,
   const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
   dolfinx::la::CUDAVector& cuda_vector,
-  bool verbose)
+  bool verbose,
+  bool interior)
 {
   CUresult cuda_err;
   const char * cuda_err_description;
@@ -251,37 +252,40 @@ void assemble_vector_exterior_facet(
   // Mapping of cellwise to global degrees of freedom and Dirichlet boundary conditions
   int num_dofs_per_cell = dofmap.num_dofs_per_cell();
   CUdeviceptr ddofmap = dofmap.dofs_per_cell();
-  CUdeviceptr dbc = bc.dof_markers();
+ // CUdeviceptr dbc = bc.dof_markers();
 
   // Global vector
   std::int32_t num_values = cuda_vector.num_values();
   CUdeviceptr dvalues = cuda_vector.values_write();
 
   (void) cuda_context;
-  // Mesh facets
-  std::int32_t tdim = mesh.tdim();
-  const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
-  std::int32_t num_mesh_entities = facets.num_mesh_entities();
-  std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
-  CUdeviceptr dmesh_entities_per_cell = facets.mesh_entities_per_cell();
-  CUdeviceptr dcells_per_mesh_entity_ptr = facets.cells_per_mesh_entity_ptr();
-  CUdeviceptr dcells_per_mesh_entity = facets.cells_per_mesh_entity();
-  CUdeviceptr dmesh_entity_permutations = facets.mesh_entity_permutations();
 
-  void * kernel_parameters[] = {
+  std::vector<void*> kernel_parameters;
+  kernel_parameters.insert(kernel_parameters.end(), {
     &num_cells,
     &num_vertices_per_cell,
     &dvertex_indices_per_cell,
     &num_vertices,
     &num_coordinates_per_vertex,
-    &dvertex_coordinates,
-    //&dcell_permutations,
-    &num_mesh_entities,
-    &num_mesh_entities_per_cell,
-    &dmesh_entities_per_cell,
-    &dcells_per_mesh_entity_ptr,
-    &dcells_per_mesh_entity,
-    &dmesh_entity_permutations,
+    &dvertex_coordinates});
+
+
+
+  if (interior) {
+    std::int32_t tdim = mesh.tdim();
+    const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
+    std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
+    CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
+    CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
+    std::int32_t num_coefficients = coefficients.num_coefficients();
+    kernel_parameters.insert(kernel_parameters.end(), {
+      &num_mesh_entities_per_cell,
+      &dfacet_permutations,
+      &num_coefficients,
+      &coefficient_values_offsets});
+  }
+
+  kernel_parameters.insert(kernel_parameters.end(), {
     &num_active_mesh_entities,
     &dactive_mesh_entities,
     &num_constant_values,
@@ -290,9 +294,10 @@ void assemble_vector_exterior_facet(
     &dcoefficient_values,
     &num_dofs_per_cell,
     &ddofmap,
-    &dbc,
+   // &dbc,
     &num_values,
-    &dvalues};
+    &dvalues});
+
 
   // Use the CUDA occupancy calculator to determine a grid and block
   // size for the CUDA kernel
@@ -321,7 +326,7 @@ void assemble_vector_exterior_facet(
     kernel, grid_dim_x, grid_dim_y, grid_dim_z,
     block_dim_x, block_dim_y, block_dim_z,
     shared_mem_size_per_thread_block,
-    stream, kernel_parameters, NULL, verbose);
+    stream, kernel_parameters.data(), NULL, verbose);
   if (cuda_err != CUDA_SUCCESS) {
     cuGetErrorString(cuda_err, &cuda_err_description);
     throw std::runtime_error(
@@ -972,7 +977,7 @@ public:
     const CUDA::Context& cuda_context,
     const dolfinx::mesh::CUDAMesh<U>& mesh,
     const dolfinx::fem::CUDADofMap& dofmap,
-    const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+   // const dolfinx::fem::CUDADirichletBC<T,U>& bc,
     const dolfinx::fem::CUDAFormConstants<T>& constants,
     const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     dolfinx::la::CUDAVector& cuda_vector,
@@ -980,17 +985,19 @@ public:
   {
     CUresult cuda_err;
     const char * cuda_err_description;
-
+    bool interior = false;
     switch (_integral_type) {
     case IntegralType::cell:
       assemble_vector_cell(
         cuda_context, _assembly_kernel, _num_mesh_entities + _num_mesh_ghost_entities, _dmesh_entities,
-        mesh, dofmap, bc, constants, coefficients, cuda_vector, verbose);
+        mesh, dofmap, constants, coefficients, cuda_vector, verbose);
       break;
+    case IntegralType::interior_facet:
+      interior = true;
     case IntegralType::exterior_facet:
-      assemble_vector_exterior_facet(
+      assemble_vector_facet(
         cuda_context, _assembly_kernel, _num_mesh_entities + _num_mesh_ghost_entities, _dmesh_entities,
-        mesh, dofmap, bc, constants, coefficients, cuda_vector, verbose);
+        mesh, dofmap, constants, coefficients, cuda_vector, verbose, interior);
       break;
     default:
       throw std::runtime_error(
@@ -1574,22 +1581,18 @@ public:
       _num_mesh_entities + _num_mesh_ghost_entities;
     CUdeviceptr mesh_entities = _dmesh_entities;
     CUdeviceptr element_values = _delement_values;
-
     std::int32_t num_vertices_per_cell = mesh.num_vertices_per_cell();
     CUdeviceptr dvertex_indices_per_cell = mesh.vertex_indices_per_cell();
     std::int32_t num_vertices = mesh.num_vertices();
     std::int32_t num_coordinates_per_vertex = mesh.num_coordinates_per_vertex();
     CUdeviceptr dvertex_coordinates = mesh.vertex_coordinates();
     //CUdeviceptr dcell_permutations = mesh.cell_permutations();
-
     std::int32_t num_dofs_per_cell0 = dofmap0.num_dofs_per_cell();
     CUdeviceptr ddofmap0 = dofmap0.dofs_per_cell();
     std::int32_t num_dofs_per_cell1 = dofmap1.num_dofs_per_cell();
     CUdeviceptr ddofmap1 = dofmap1.dofs_per_cell();
-
     CUdeviceptr dbc0 = bc0.dof_markers();
     CUdeviceptr dbc1 = bc1.dof_markers();
-
     CUdeviceptr dconstant_values = constants.constant_values();
     std::int32_t num_coefficient_values_per_cell =
       coefficients.num_packed_coefficient_values_per_cell();
@@ -1676,6 +1679,7 @@ public:
       &num_local_offdiag_columns,
       &dcolmap});
 
+
     cuda_err = launch_cuda_kernel(
       kernel, grid_dim_x, grid_dim_y, grid_dim_z,
       block_dim_x, block_dim_y, block_dim_z,
@@ -1696,6 +1700,7 @@ public:
         "cuCtxSynchronize() failed with " + std::string(cuda_err_description) +
         " at " + __FILE__ + ":" + std::to_string(__LINE__));
     }
+
   }
 
   //-----------------------------------------------------------------------------

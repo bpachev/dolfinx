@@ -250,7 +250,7 @@ public:
   const CUDA::Context& cuda_context,
   const dolfinx::mesh::CUDAMesh<U>& mesh,
   const dolfinx::fem::CUDADofMap& dofmap,
-  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
+//  const dolfinx::fem::CUDADirichletBC<T,U>& bc,
   const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& form_integrals,
   const dolfinx::fem::CUDAFormConstants<T>& constants,
   const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
@@ -264,7 +264,7 @@ public:
         const std::vector<CUDAFormIntegral<T,U>>& cuda_cell_integrals = it->second;
         for (auto const& cuda_cell_integral : cuda_cell_integrals) {
           cuda_cell_integral.assemble_vector(
-            cuda_context, mesh, dofmap, bc,
+            cuda_context, mesh, dofmap,
             constants, coefficients, b, verbose);
         }
       }
@@ -280,7 +280,7 @@ public:
                cuda_exterior_facet_integrals)
         {
           cuda_exterior_facet_integral.assemble_vector(
-            cuda_context, mesh, dofmap, bc,
+            cuda_context, mesh, dofmap,
             constants, coefficients, b, verbose);
         }
       }
@@ -296,7 +296,7 @@ public:
                cuda_interior_facet_integrals)
         {
           cuda_interior_facet_integral.assemble_vector(
-            cuda_context, mesh, dofmap, bc,
+            cuda_context, mesh, dofmap,
             constants, coefficients, b, verbose);
         }
       }

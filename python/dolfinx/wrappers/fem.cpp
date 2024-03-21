@@ -890,6 +890,13 @@ void declare_cuda_funcs(nb::module_& m)
 
           // TODO this definitely should be created only once per mesh. . . 
           dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *form.mesh());
+          dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
+            cuda_context, &form);
+          dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
+            cuda_context, &form);
+          // TODO should this be a separate call???
+          assembler.pack_coefficients(
+            cuda_context, cuda_a_form_coefficients, false);
 
           // TODO allow these to be specified by the user
           // TODO also allow the assembly kernel type to be user-specified
@@ -902,13 +909,7 @@ void declare_cuda_funcs(nb::module_& m)
           cuda_a_form_integrals = dolfinx::fem::cuda_form_integrals(
               cuda_context, cujit_target, form, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
               max_threads_per_block, min_blocks_per_sm, true, NULL, true);
-          dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
-            cuda_context, &form);
-          dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
-            cuda_context, &form);
-          // TODO should this be a separate call???
-          assembler.pack_coefficients(
-            cuda_context, cuda_a_form_coefficients, false);
+
           dolfinx::la::CUDAMatrix cuda_A(cuda_context, A, false, false);
           assembler.compute_lookup_tables(
             cuda_context, *cuda_dofmap0, *cuda_dofmap1,
@@ -929,6 +930,45 @@ void declare_cuda_funcs(nb::module_& m)
         nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("A"),
         nb::arg("bcs"), "Assemble matrix on GPU."
   );
+
+  m.def("assemble_vector_on_device", [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+           dolfinx::fem::Form<T,U>& form, Vec b) {
+          // TODO this definitely should be created only once per mesh. . . 
+          dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *form.mesh());
+          // Extract constant and coefficient data
+          dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
+            cuda_context, &form);
+          dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
+            cuda_context, &form);
+          // TODO should this be a separate call???
+          std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
+            form.function_spaces()[0]->cuda_dofmap();
+          assembler.pack_coefficients(
+            cuda_context, cuda_a_form_coefficients, false);
+          
+          dolfinx::la::CUDAVector cuda_b(cuda_context, b);
+          assembler.zero_vector_entries(cuda_context, cuda_b);
+          // TODO allow these to be specified by the user
+          // TODO also allow the assembly kernel type to be user-specified
+          int max_threads_per_block = 1024;
+          int min_blocks_per_sm = 1;
+          auto cujit_target = dolfinx::CUDA::get_cujit_target(cuda_context);
+
+          std::map<dolfinx::fem::IntegralType,
+                 std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
+          cuda_a_form_integrals = dolfinx::fem::cuda_form_integrals(
+              cuda_context, cujit_target, form, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
+              max_threads_per_block, min_blocks_per_sm, true, NULL, true);
+          assembler.assemble_vector(
+             cuda_context, cuda_mesh, *cuda_dofmap0,
+             cuda_a_form_integrals, cuda_a_form_constants,
+             cuda_a_form_coefficients, cuda_b, false);
+          cuda_b.copy_vector_values_to_host(cuda_context);
+          
+        },
+        nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("b"),
+        "Assemble vector on GPU."
+  ); 
 }
 
 #endif
