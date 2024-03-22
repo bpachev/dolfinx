@@ -933,6 +933,9 @@ void declare_cuda_funcs(nb::module_& m)
 
   m.def("assemble_vector_on_device", [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
            dolfinx::fem::Form<T,U>& form, Vec b) {
+          
+          std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
+            form.function_spaces()[0]->cuda_dofmap();
           // TODO this definitely should be created only once per mesh. . . 
           dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *form.mesh());
           // Extract constant and coefficient data
@@ -941,8 +944,6 @@ void declare_cuda_funcs(nb::module_& m)
           dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
             cuda_context, &form);
           // TODO should this be a separate call???
-          std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
-            form.function_spaces()[0]->cuda_dofmap();
           assembler.pack_coefficients(
             cuda_context, cuda_a_form_coefficients, false);
           

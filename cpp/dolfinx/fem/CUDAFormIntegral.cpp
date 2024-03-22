@@ -54,6 +54,8 @@ std::string compute_interior_facet_tensor(
  bool vector=false
 );
 
+// add debugging code to assembly kernel
+std::string dump_assembly_vars(IntegralType integral_type);
 
 std::string interior_facet_extra_args();
 std::string interior_facet_pack_cell_coeffs(int32_t num_coeffs_per_cell);
@@ -266,7 +268,6 @@ std::string cuda_kernel_assemble_vector_interior_facet(
     "  const ufc_scalar_t* __restrict__ coeffs,\n"
     "  int num_dofs_per_cell,\n"
     "  const int32_t* __restrict__ dofmap,\n"
-   // "  const char* __restrict__ bc,\n"
     "  int32_t num_values,\n"
     "  ufc_scalar_t* __restrict__ values)\n"
     "{\n"
@@ -308,7 +309,7 @@ std::string cuda_kernel_assemble_vector_interior_facet(
     "      int32_t row = dofs[j];\n"
     "      atomicAdd(&values[row], xe[j]);\n"
     "    }\n"
-    "  }\n"
+    "  }\n" 
     "}";
 }
 
@@ -1563,6 +1564,42 @@ std::string cuda_kernel_assemble_matrix_exterior_facet(
     "}\n";  
 }
 
+std::string dump_arr(const std::string& name, const std::string& length, const std::string& fmt)
+{
+  return
+    " printf(\""+name+": [\");\n"
+    " for (int j=0; j <  "+length+"; j++) {\n"
+    "   printf(\"%"+fmt+", \", "+name+"[j]);\n"
+    "}\n"
+    "printf(\"]\\n\");\n\n";
+}
+
+// Generate debugging code to print all assembly variables
+std::string dump_assembly_vars(IntegralType integral_type)
+{
+  std::string body = "";
+  std::string n_coords;
+  switch (integral_type) {
+    case IntegralType::interior_facet:
+      n_coords = "2*num_vertices_per_cell*num_coordinates_per_vertex";
+      body += dump_arr("coefficient_values_offsets", "num_coefficients+1", "d");
+      body += dump_arr("cell_coeffs", "2*num_coeffs_per_cell", "f");
+      body += dump_arr("cell_coeffs0", "num_coeffs_per_cell", "f");
+      body += dump_arr("cell_coeffs1", "num_coeffs_per_cell", "f");
+      break;
+    case IntegralType::cell:
+    case IntegralType::exterior_facet:
+      n_coords = "num_vertices_per_cell*num_coordinates_per_vertex";
+      body += dump_arr("coeff_cell", "num_coeffs_per_cell", "f");
+      break;  
+  }
+
+  body +=
+    dump_arr("cell_vertex_coordinates", n_coords, "f");
+
+  return body;
+}
+
 // For cell and exterior facet integrals, packed coefficients
 // are stored in contiguous blocks pertaining to a single cell
 // However, interior facets require that values from each cell 
@@ -1597,7 +1634,7 @@ std::string interior_facet_extra_args()
   "  int32_t num_mesh_entities_per_cell,\n"
   "  const uint8_t* __restrict__ facet_permutations,\n"
   "  int num_coefficients,\n"
-  "  const int* coefficient_values_offsets,\n";
+  "  const int* __restrict__ coefficient_values_offsets,\n";
 }
 
 // body of tensor assembly for interior facet

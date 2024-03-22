@@ -270,14 +270,15 @@ void assemble_vector_facet(
     &dvertex_coordinates});
 
 
+  std::int32_t tdim = mesh.tdim();
+  const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
+  std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
+  CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
+  CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
+  std::int32_t num_coefficients = coefficients.num_coefficients();
+
 
   if (interior) {
-    std::int32_t tdim = mesh.tdim();
-    const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
-    std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
-    CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
-    CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
-    std::int32_t num_coefficients = coefficients.num_coefficients();
     kernel_parameters.insert(kernel_parameters.end(), {
       &num_mesh_entities_per_cell,
       &dfacet_permutations,
@@ -545,14 +546,15 @@ void lift_bc_facet(
     &dvertex_indices_per_cell,
     &num_coordinates_per_vertex,
     &dvertex_coordinates});
+
+  std::int32_t tdim = mesh.tdim();
+  const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
+  std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
+  CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
+  CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
+  std::int32_t num_coefficients = coefficients.num_coefficients();
  
   if (interior) {
-    std::int32_t tdim = mesh.tdim();
-    const dolfinx::mesh::CUDAMeshEntities<U>& facets = mesh.mesh_entities()[tdim-1];
-    std::int32_t num_mesh_entities_per_cell = facets.num_mesh_entities_per_cell();
-    CUdeviceptr dfacet_permutations = facets.mesh_entity_permutations();
-    CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
-    std::int32_t num_coefficients = coefficients.num_coefficients();
     kernel_parameters.insert(kernel_parameters.end(), {
       &num_mesh_entities_per_cell,
       &dfacet_permutations,
