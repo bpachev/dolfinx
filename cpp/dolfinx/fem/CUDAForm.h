@@ -8,17 +8,23 @@
 #pragma once
 
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/DirichletBC.h>
 
 #if defined(HAS_CUDA_TOOLKIT)
 #include <dolfinx/common/CUDA.h>
+#include <dolfinx/fem/CUDADirichletBC.h>
 #include <dolfinx/fem/CUDADofMap.h>
 #include <dolfinx/fem/CUDAFormCoefficients.h>
 #include <dolfinx/fem/CUDAFormConstants.h>
-#include <dolfinx/fem/CUDAFormIntegrals.h>
+#include <dolfinx/fem/CUDAFormIntegral.h>
 #include <dolfinx/la/CUDAVector.h>
 #endif
 
 #if defined(HAS_CUDA_TOOLKIT)
+
+namespace dolfinx {
+
+namespace fem {
 
 /// Consolidates all form classes into one
 template <dolfinx::scalar T,
@@ -35,30 +41,29 @@ public:
     Form<T,U>* form
   )
   : _coefficients(cuda_context, form)
-  : _constants(cuda_context, form)
-  : _form(form)
-  : _compiled(false)
+  , _constants(cuda_context, form)
+  , _form(form)
+  , _compiled(false)
   {
   }
 
   /// Compile form on GPU
   /// Under the hood, this creates the integrals
   void compile(
-    const CUDA::Context& cuda_context
+    const CUDA::Context& cuda_context,
     int32_t max_threads_per_block,
     int32_t min_blocks_per_multiprocessor,
-    enum assembly_kernel_type assembly_kernel_type
-  )
+    enum assembly_kernel_type assembly_kernel_type)
   {
     auto cujit_target = CUDA::get_cujit_target(cuda_context);
     _integrals = cuda_form_integrals(
       cuda_context, cujit_target, *_form, assembly_kernel_type,
-      max_threads_per_block, min_blocks_per_sm, false, NULL, false);
+      max_threads_per_block, min_blocks_per_multiprocessor, false, NULL, false);
     _compiled = true;
   }
 
   /// Copy constructor
-  CUDAForm(const CudaForm& form) = delete;
+  CUDAForm(const CUDAForm& form) = delete;
 
   /// Move constructor
   CUDAForm(CUDAForm&& form) = default;
@@ -68,16 +73,25 @@ public:
 
   bool compiled() { return _compiled; }
   
-  const std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& integrals {
+  std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>>& integrals() {
     if (!_compiled) {
       throw std::runtime_error("Cannot access integrals for uncompiled cuda form!");
     }
     return _integrals;
   }
 
-  const CUDAFormCoefficients<T,U>& coefficients() { return _coefficients; }
+  CUDAFormCoefficients<T,U>& coefficients() { return _coefficients; }
 
   const CUDAFormConstants<T>& constants() { return _constants; }
+
+  std::shared_ptr<const CUDADofMap> dofmap(size_t i) {return _form->function_spaces()[i]->cuda_dofmap(); }
+
+  CUDADirichletBC<T,U> bc(
+    const CUDA::Context& cuda_context, size_t i,
+    std::vector<std::shared_ptr<const DirichletBC<T,U>>> bcs)
+  {
+    return CUDADirichletBC<T,U>(cuda_context, *_form->function_spaces()[i], bcs);
+  }
 
 private:
 
@@ -85,6 +99,11 @@ private:
   CUDAFormConstants<T> _constants;
   std::map<IntegralType, std::vector<CUDAFormIntegral<T,U>>> _integrals;
   bool _compiled;
+  Form<T,U>* _form;
 };
+
+} // end namespace fem
+
+} // end namespace dolfinx
 
 #endif

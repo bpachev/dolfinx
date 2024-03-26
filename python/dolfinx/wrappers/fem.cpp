@@ -33,6 +33,7 @@
 #include <dolfinx/fem/CUDAAssembler.h>
 #include <dolfinx/fem/CUDADirichletBC.h>
 #include <dolfinx/fem/CUDADofMap.h>
+#include <dolfinx/fem/CUDAForm.h>
 #include <dolfinx/fem/CUDAFormIntegral.h>
 #include <dolfinx/fem/CUDAFormConstants.h>
 #include <dolfinx/fem/CUDAFormCoefficients.h>
@@ -737,6 +738,29 @@ template <typename T>
 void declare_cuda_templated_objects(nb::module_& m, std::string type)
 {
   using U = typename dolfinx::scalar_value_type_t<T>;
+
+  std::string formclass_name = std::string("CUDAForm_") + type;
+  nb::class_<dolfinx::fem::CUDAForm<T,U>>(m, formclass_name.c_str(), "Form on GPU")
+      .def(
+          "__init__",
+           [](dolfinx::fem::CUDAForm<T,U>* cf, const dolfinx::CUDA::Context& cuda_context,
+              dolfinx::fem::Form<T,U>& form)
+             {
+               new (cf) dolfinx::fem::CUDAForm<T,U>(
+                 cuda_context,
+                 &form
+               );
+             }, nb::arg("context"), nb::arg("form"))
+      .def(
+          "compile",
+          [](dolfinx::fem::CUDAForm<T,U>& cf, const dolfinx::CUDA::Context& cuda_context,
+             int32_t max_threads_per_block, int32_t min_blocks_per_multiprocessor)
+             {
+               cf.compile(cuda_context, max_threads_per_block,
+                          min_blocks_per_multiprocessor, dolfinx::fem::assembly_kernel_type::ASSEMBLY_KERNEL_GLOBAL);
+             }, nb::arg("context"), nb::arg("max_threads_per_block"), nb::arg("min_blocks_per_multiprocessor"))
+      .def_prop_ro("compiled", &dolfinx::fem::CUDAForm<T,U>::compiled);
+
   std::string pyclass_name = std::string("CUDAFormIntegral_") + type;
   nb::class_<dolfinx::fem::CUDAFormIntegral<T,U>>(m, pyclass_name.c_str(),
                                                   "Form Integral on GPU")
@@ -825,14 +849,29 @@ void declare_cuda_objects(nb::module_& m)
           "__init__",
           [](dolfinx::la::CUDAMatrix* cumat, const dolfinx::CUDA::Context& cuda_context, Mat A) {
             new (cumat) dolfinx::la::CUDAMatrix(cuda_context, A, false, false);
-          }, nb::arg("context"), nb::arg("A"));
+          }, nb::arg("context"), nb::arg("A"))
+      .def_prop_ro("mat",
+          [](dolfinx::la::CUDAMatrix& cumat) {
+            Mat A = cumat.mat();
+            PyObject* obj = PyPetscMat_New(A);
+            PetscObjectDereference((PetscObject)A);
+            return nb::borrow(obj);
+          });
 
   nb::class_<dolfinx::la::CUDAVector>(m, "CUDAVector", "Vector object on GPU")
       .def(
           "__init__",
           [](dolfinx::la::CUDAVector* cuvec, const dolfinx::CUDA::Context& cuda_context, Vec x) {
+            std::cout << "Creating cuda vector" << std::endl;
             new (cuvec) dolfinx::la::CUDAVector(cuda_context, x);
-          }, nb::arg("context"), nb::arg("x"));
+          }, nb::arg("context"), nb::arg("x"))
+      .def_prop_ro("vector",
+          [](dolfinx::la::CUDAVector& cuvec) {
+            Vec b = cuvec.vector();
+            PyObject* obj = PyPetscVec_New(b);
+            PetscObjectDereference((PetscObject)b);
+            return nb::borrow(obj);
+          });
 
   nb::class_<dolfinx::fem::CUDADofMap>(m, "CUDADofMap", "DofMap object on GPU")
       .def(
@@ -875,50 +914,33 @@ void declare_cuda_funcs(nb::module_& m)
 
   m.def("assemble_matrix_on_device",
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
-           dolfinx::fem::Form<T,U>& form, Mat A, std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs) {
+           dolfinx::fem::CUDAForm<T,U>& cuda_form, dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
+           dolfinx::la::CUDAMatrix& cuda_A, std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs) {
           // Extract constant and coefficient data
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
-            form.function_spaces()[0]->cuda_dofmap();
+            cuda_form.dofmap(0);
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap1 =
-            form.function_spaces()[1]->cuda_dofmap();
+            cuda_form.dofmap(1);
 
-          
-          dolfinx::fem::CUDADirichletBC<T,U> cuda_bc0(
-            cuda_context, *form.function_spaces()[0], bcs);
-          dolfinx::fem::CUDADirichletBC<T,U> cuda_bc1(
-            cuda_context, *form.function_spaces()[1], bcs);  
+          dolfinx::fem::CUDADirichletBC<T,U> cuda_bc0 = cuda_form.bc(cuda_context, 0, bcs);
+          dolfinx::fem::CUDADirichletBC<T,U> cuda_bc1 = cuda_form.bc(cuda_context, 1, bcs);
 
-          // TODO this definitely should be created only once per mesh. . . 
-          dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *form.mesh());
-          dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
-            cuda_context, &form);
-          dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
-            cuda_context, &form);
-          // TODO should this be a separate call???
+          // should probably make this its own function and allow for partial copies
+          // as some coefficients will remain unchanged
+          // However, for now we'll copy each time to ensure correctness 
+          cuda_form.coefficients().copy_coefficients_to_device(cuda_context);
           assembler.pack_coefficients(
-            cuda_context, cuda_a_form_coefficients, false);
+            cuda_context, cuda_form.coefficients(), false);
 
-          // TODO allow these to be specified by the user
-          // TODO also allow the assembly kernel type to be user-specified
-          int max_threads_per_block = 1024;
-          int min_blocks_per_sm = 1;
-          auto cujit_target = dolfinx::CUDA::get_cujit_target(cuda_context);
-
-          std::map<dolfinx::fem::IntegralType,
-                 std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
-          cuda_a_form_integrals = dolfinx::fem::cuda_form_integrals(
-              cuda_context, cujit_target, form, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
-              max_threads_per_block, min_blocks_per_sm, true, NULL, true);
-
-          dolfinx::la::CUDAMatrix cuda_A(cuda_context, A, false, false);
-          assembler.compute_lookup_tables(
+          // not needed for global assembly kernel
+          /*assembler.compute_lookup_tables(
             cuda_context, *cuda_dofmap0, *cuda_dofmap1,
-            cuda_bc0, cuda_bc1, cuda_a_form_integrals, cuda_A, false);
+            cuda_bc0, cuda_bc1, cuda_a_form_integrals, cuda_A, false);*/
           assembler.zero_matrix_entries(cuda_context, cuda_A);
           assembler.assemble_matrix(
             cuda_context, cuda_mesh, *cuda_dofmap0, *cuda_dofmap1,
-            cuda_bc0, cuda_bc1, cuda_a_form_integrals,
-            cuda_a_form_constants, cuda_a_form_coefficients,
+            cuda_bc0, cuda_bc1, cuda_form.integrals(),
+            cuda_form.constants(), cuda_form.coefficients(),
             cuda_A, false);
           assembler.add_diagonal(cuda_context, cuda_A, cuda_bc0);
           // TODO determine if this copy is actually needed. . .
@@ -927,47 +949,33 @@ void declare_cuda_funcs(nb::module_& m)
           cuda_A.apply(MAT_FINAL_ASSEMBLY);
  
         },
-        nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("A"),
-        nb::arg("bcs"), "Assemble matrix on GPU."
+        nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"),
+        nb::arg("A"), nb::arg("bcs"), "Assemble matrix on GPU."
   );
 
-  m.def("assemble_vector_on_device", [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
-           dolfinx::fem::Form<T,U>& form, Vec b) {
+  m.def("assemble_vector_on_device",
+        [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+           dolfinx::fem::CUDAForm<T,U>& cuda_form,
+           dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
+           dolfinx::la::CUDAVector& cuda_b)
+           {
           
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
-            form.function_spaces()[0]->cuda_dofmap();
-          // TODO this definitely should be created only once per mesh. . . 
-          dolfinx::mesh::CUDAMesh<U> cuda_mesh(cuda_context, *form.mesh());
-          // Extract constant and coefficient data
-          dolfinx::fem::CUDAFormConstants<T> cuda_a_form_constants(
-            cuda_context, &form);
-          dolfinx::fem::CUDAFormCoefficients<T,U> cuda_a_form_coefficients(
-            cuda_context, &form);
-          // TODO should this be a separate call???
+            cuda_form.dofmap(0);
+          // we'll almost always need to call this if coefficient values change
+          cuda_form.coefficients().copy_coefficients_to_device(cuda_context); 
           assembler.pack_coefficients(
-            cuda_context, cuda_a_form_coefficients, false);
+            cuda_context, cuda_form.coefficients(), false);
           
-          dolfinx::la::CUDAVector cuda_b(cuda_context, b);
           assembler.zero_vector_entries(cuda_context, cuda_b);
-          // TODO allow these to be specified by the user
-          // TODO also allow the assembly kernel type to be user-specified
-          int max_threads_per_block = 1024;
-          int min_blocks_per_sm = 1;
-          auto cujit_target = dolfinx::CUDA::get_cujit_target(cuda_context);
-
-          std::map<dolfinx::fem::IntegralType,
-                 std::vector<dolfinx::fem::CUDAFormIntegral<T,U>>>
-          cuda_a_form_integrals = dolfinx::fem::cuda_form_integrals(
-              cuda_context, cujit_target, form, dolfinx::fem::ASSEMBLY_KERNEL_GLOBAL,
-              max_threads_per_block, min_blocks_per_sm, true, NULL, true);
           assembler.assemble_vector(
              cuda_context, cuda_mesh, *cuda_dofmap0,
-             cuda_a_form_integrals, cuda_a_form_constants,
-             cuda_a_form_coefficients, cuda_b, false);
+             cuda_form.integrals(), cuda_form.constants(),
+             cuda_form.coefficients(), cuda_b, false);
           cuda_b.copy_vector_values_to_host(cuda_context);
           
         },
-        nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("b"),
+        nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"), nb::arg("b"),
         "Assemble vector on GPU."
   ); 
 }

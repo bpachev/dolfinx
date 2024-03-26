@@ -11,11 +11,10 @@ from dolfinx import la
 from dolfinx.fem.bcs import DirichletBC
 from dolfinx.fem.forms import Form
 from dolfinx.fem.function import Function, FunctionSpace
+from dolfinx.mesh import Mesh
 from dolfinx.fem.petsc import create_vector as create_petsc_vector
 from petsc4py import PETSc
-
-
-
+import gc
 
 def init_device():
   """Initialize PETSc device
@@ -25,27 +24,25 @@ def init_device():
   d.create(PETSc.Device.Type.CUDA)
   return d
 
-def to_device(obj: typing.Union[Function, FunctionSpace]):
-   """Copy an object needed for assembly to the GPU
-   """
+class CUDAAssembler:
+  """Class for assembly on the GPU
+  """
 
-   ctx = _cpp.fem.CUDAContext()
-   if type(obj) is Function:
-       _cpp.fem.copy_function_to_device(ctx, obj._cpp_object)
-   elif type(obj) is FunctionSpace:
-       _cpp.fem.copy_function_space_to_device(ctx, obj._cpp_object)
-   else:
-       raise ValueError(f"Cannot copy object of type {type(obj)} to the GPU")
+  def __init__(self):
+    """Initialize the assembler
+    """
 
+    self._device = init_device()
+    self._ctx = _cpp.fem.CUDAContext()
+    self._tmpdir = tempfile.TemporaryDirectory()
+    self._cpp_object = _cpp.fem.CUDAAssembler(self._ctx, self._tmpdir.name)
 
-@functools.singledispatch
-def assemble_matrix(
-    a: typing.Any,
-    bcs: typing.Optional[list[DirichletBC]] = None,
-    diagonal: float = 1.0,
-    constants=None,
-    coeffs=None
-):
+  def assemble_matrix(self,
+      a: Form,
+      mat: typing.Optional[_cpp.fem.CUDAMatrix] = None,
+      bcs: typing.Optional[list[DirichletBC]] = None,
+      diagonal: float = 1.0
+  ):
     """Assemble bilinear form into a matrix on the GPU.
 
     Args:
@@ -65,83 +62,129 @@ def assemble_matrix(
         accumulated.
 
     """
+    self.copy_form_to_device(a)
+    if mat is None:
+      petsc_mat = _cpp.fem.petsc.create_matrix_with_fixed_pattern(a._cpp_object)
+      mat = CUDAMatrix(self._ctx, petsc_mat)
 
-    bcs = [] if bcs is None else bcs
-    A: PETSc.Mat = _cpp.fem.petsc.create_matrix_with_fixed_pattern(a._cpp_object)
-    _assemble_matrix_petsc(A, a, bcs, diagonal, constants, coeffs)
-    return A
+    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs] 
+    _cpp.fem.assemble_matrix_on_device(
+       self._ctx, self._cpp_object, a._cuda_form,
+       a._cuda_mesh, mat._cpp_object, bcs
+    )
 
-@assemble_matrix.register
-def _assemble_matrix_petsc(
-    A: PETSc.Mat,
-    a: Form,
-    bcs: typing.Optional[list[DirichletBC]] = None,
-    diagonal: float = 1.0,
-    constants=None,
-    coeffs=None,
-) -> la.MatrixCSR:
-    """Assemble bilinear form into a matrix on the GPU.
+    return mat
 
-    Args:
-        A: The matrix to assemble into. It must have been initialized
-            with the correct sparsity pattern.
-        a: The bilinear form assemble.
-        bcs: Boundary conditions that affect the assembled matrix.
-            Degrees-of-freedom constrained by a boundary condition will
-            have their rows/columns zeroed and the value ``diagonal``
-            set on on
-        constants: Constants that appear in the form. If not provided,
-            any required constants will be computed.
-            the matrix diagonal.
-        coeffs: Coefficients that appear in the form. If not provided,
-            any required coefficients will be computed.
-
-    Note:
-        The returned matrix is not finalised, i.e. ghost values are not
-        accumulated.
-
-    """
-    # step 1 - create a cuda context
-    # TODO - manage this guy properly
-    ctx = _cpp.fem.CUDAContext()
-    tmpdir = tempfile.TemporaryDirectory()
-    assembler = _cpp.fem.CUDAAssembler(ctx, tmpdir.name)
-    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-    coeffs = a._cpp_object.coefficients
-    for space in a._cpp_object.function_spaces:
-       _cpp.fem.copy_function_space_to_device(ctx, space)
-    for c in coeffs:
-      _cpp.fem.copy_function_space_to_device(ctx, c.function_space)
-    # TODO properly handle packing of coefficients and constants
-    _cpp.fem.assemble_matrix_on_device(ctx, assembler, a._cpp_object, A, bcs)
-    #constants = _pack_constants(a._cpp_object) if constants is None else constants
-    #coeffs = _pack_coefficients(a._cpp_object) if coeffs is None else coeffs
-    #_cpp.fem.assemble_matrix(A._cpp_object, a._cpp_object, constants, coeffs, bcs)
-
-    # If matrix is a 'diagonal'block, set diagonal entry for constrained
-    # dofs
-    #if a.function_spaces[0] is a.function_spaces[1]:
-    #    _cpp.fem.insert_diagonal(A._cpp_object, a.function_spaces[0], bcs, diagonal)
-    return A
-
-def assemble_vector(b: Form, constants=None, coeffs=None):
+  def assemble_vector(self,
+    b: Form,
+    vec: typing.Optional[CUDAVector] = None,
+    constants=None, coeffs=None
+  ):
     """Assemble linear form into vector on GPU
 
     Args:
         b: the linear form to use for assembly
+        vec: the vector to assemble into. Created if it doesn't exist
         constants: Form constants
         coeffs: Form coefficients
     """
 
-    ctx = _cpp.fem.CUDAContext()
-    tmpdir = tempfile.TemporaryDirectory()
-    assembler = _cpp.fem.CUDAAssembler(ctx, tmpdir.name)
-    coeffs = b._cpp_object.coefficients
-    for space in b._cpp_object.function_spaces:
-       _cpp.fem.copy_function_space_to_device(ctx, space)
-    for c in coeffs:
-       _cpp.fem.copy_function_space_to_device(ctx, c.function_space)
-
-    vec = create_petsc_vector(b)
-    _cpp.fem.assemble_vector_on_device(ctx, assembler, b._cpp_object, vec)
+    self.copy_form_to_device(b)
+    if vec is None:
+      petsc_vec = create_petsc_vector(b)
+      vec = CUDAVector(self._ctx, petsc_vec)
+    
+    _cpp.fem.assemble_vector_on_device(self._ctx, self._cpp_object, b._cuda_form,
+      b._cuda_mesh, vec._cpp_object)
     return vec
+
+
+  def copy_form_to_device(self, form: Form):
+    """Copy all needed assembly data structures to the device.
+    """
+    
+    # prevent duplicate initialization of CUDA data
+    if hasattr(form, 'cuda_form'): return
+
+    # now determine the Mesh object corresponding to this form
+    form._cuda_mesh = self.copy_mesh_to_device(form.mesh)
+    # functionspaces
+    coeffs = form._cpp_object.coefficients
+    for space in form._cpp_object.function_spaces:
+      _cpp.fem.copy_function_space_to_device(self._ctx, space)
+    for c in coeffs:
+      _cpp.fem.copy_function_space_to_device(self._ctx, c.function_space)
+
+    cpp_form = form._cpp_object
+    if type(cpp_form) is _cpp.fem.Form_float32:
+      cuda_form = _cpp.fem.CUDAForm_float32(self._ctx, cpp_form)
+    elif type(cpp_form) is _cpp.fem.Form_float64:
+      cuda_form = _cpp.fem.CUDAForm_float64(self._ctx, cpp_form)
+    else:
+      raise ValueError(f"Cannot instantiate CUDAForm for Form of type {type(cpp_form)}!")
+
+    # TODO expose these to the user. . . .
+    cuda_form.compile(self._ctx, max_threads_per_block=1024, min_blocks_per_multiprocessor=1)
+    form._cuda_form = cuda_form
+
+  def copy_mesh_to_device(self, cpp_mesh: typing.Union[_cpp.mesh.Mesh_float32, _cpp.mesh.Mesh_float64]):
+    """Copy mesh to device.
+    """
+
+    if type(cpp_mesh) is _cpp.mesh.Mesh_float32:
+      return _cpp.fem.CUDAMesh_float32(self._ctx, cpp_mesh)
+    elif type(cpp_mesh) is _cpp.mesh.Mesh_float64:
+      return _cpp.fem.CUDAMesh_float64(self._ctx, cpp_mesh)
+    else:
+      raise ValueError(f"Cannot instantiate CUDAMesh for Mesh of type {type(cpp_mesh)}!")
+
+    
+class CUDAVector:
+  """Vector on device
+  """
+
+  def __init__(self, ctx, petsc_vec):
+    """Initialize the vector
+    """
+
+    self._petsc_vec = petsc_vec
+    self._cpp_object = _cpp.fem.CUDAVector(ctx, petsc_vec)
+
+  def vector(self):
+    """Return underlying PETSc vector
+    """
+
+    return self._petsc_vec
+
+  def __del__(self):
+    """Delete the vector and free up GPU resources
+    """
+
+    # Ensure that the cpp CUDAVector is taken care of BEFORE the petsc vector. . . .
+    del self._cpp_object
+    gc.collect()
+
+class CUDAMatrix:
+  """Matrix on device
+  """
+
+  def __init__(self, ctx, petsc_mat):
+    """Initialize the matrix
+    """
+
+    self._petsc_mat = petsc_mat
+    self._cpp_object = _cpp.fem.CUDAMatrix(ctx, petsc_mat)
+
+  def mat(self):
+    """Return underlying CUDA matrix
+    """
+
+    return self._petsc_mat
+
+  def __del__(self):
+    """Delete the matrix and free up GPU resources
+    """
+
+    # make sure we delete the CUDAMatrix before the petsc matrix
+    del self._cpp_object
+    gc.collect()
