@@ -56,6 +56,7 @@ std::string compute_interior_facet_tensor(
 
 // add debugging code to assembly kernel
 std::string dump_assembly_vars(IntegralType integral_type);
+std::string dump_arr(const std::string& name, const std::string& length, const std::string& fmt);
 
 std::string interior_facet_extra_args();
 std::string interior_facet_pack_cell_coeffs(int32_t num_coeffs_per_cell);
@@ -382,7 +383,7 @@ std::string cuda_kernel_lift_bc_cell(
     "  const int32_t* __restrict__ dofmap0,\n"
     "  const int32_t* __restrict__ dofmap1,\n"
     "  const char* __restrict__ bc_markers1,\n"
-    "  const char* __restrict__ bc_values1,\n"
+    "  const ufc_scalar_t* __restrict__ bc_values1,\n"
     "  double scale,\n"
     "  int32_t num_columns,\n"
     "  const ufc_scalar_t* x0,\n"
@@ -455,7 +456,7 @@ std::string cuda_kernel_lift_bc_cell(
     "      if (bc_markers1 && bc_markers1[column]) {\n"
     "        ufc_scalar_t bc = bc_values1[column];\n"
     "        for (int j = 0; j < " + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
-    "          be[j] -= Ae[k*" + std::to_string(num_dofs_per_cell1) + "+j] * scale * (bc - x0[column]);\n"
+    "          be[j] -= Ae[j*" + std::to_string(num_dofs_per_cell1) + "+k] * scale * (bc - x0[column]);\n"
     "        }\n"
     "      }\n"
     "    }\n"
@@ -498,7 +499,7 @@ std::string cuda_kernel_lift_bc_exterior_facet(
     "  const int32_t* __restrict__ dofmap0,\n"
     "  const int32_t* __restrict__ dofmap1,\n"
     "  const char* __restrict__ bc_markers1,\n"
-    "  const char* __restrict__ bc_values1,\n"
+    "  const ufc_scalar_t* __restrict__ bc_values1,\n"
     "  double scale,\n"
     "  int32_t num_columns,\n"
     "  const ufc_scalar_t* x0,\n"
@@ -572,7 +573,7 @@ std::string cuda_kernel_lift_bc_exterior_facet(
     "      if (bc_markers1 && bc_markers1[column]) {\n"
     "        ufc_scalar_t bc = bc_values1[column];\n"
     "        for (int j = 0; j < " + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
-    "          be[j] -= Ae[k*" + std::to_string(num_dofs_per_cell1) + "+j] * scale * (bc - x0[column]);\n"
+    "          be[j] -= Ae[j*" + std::to_string(num_dofs_per_cell1) + "+k] * scale * (bc - x0[column]);\n"
     "        }\n"
     "      }\n"
     "    }\n"
@@ -618,7 +619,7 @@ std::string cuda_kernel_lift_bc_interior_facet(
     "  const int32_t* __restrict__ dofmap0,\n"
     "  const int32_t* __restrict__ dofmap1,\n"
     "  const char* __restrict__ bc_markers1,\n"
-    "  const char* __restrict__ bc_values1,\n"
+    "  const ufc_scalar_t* __restrict__ bc_values1,\n"
     "  double scale,\n"
     "  int32_t num_columns,\n"
     "  const ufc_scalar_t* x0,\n"
@@ -678,7 +679,7 @@ std::string cuda_kernel_lift_bc_interior_facet(
     "      if (bc_markers1 && bc_markers1[column]) {\n"
     "        ufc_scalar_t bc = bc_values1[column];\n"
     "        for (int j = 0; j < 2*" + std::to_string(num_dofs_per_cell0) + "; j++) {\n"
-    "          be[j] -= Ae[k*2*" + std::to_string(num_dofs_per_cell1) + "+j] * scale * (bc - x0[column]);\n"
+    "          be[j] -= Ae[j*2*" + std::to_string(num_dofs_per_cell1) + "+k] * scale * (bc - x0[column]);\n"
     "        }\n"
     "      }\n"
     "    }\n"

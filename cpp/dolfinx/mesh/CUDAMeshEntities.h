@@ -63,8 +63,6 @@ public:
       *mesh.topology()->connectivity(_tdim, _dim);
 
     // Allocate device-side storage for mesh entities of each cell
-    std::cout << "Tdim " << _tdim << " dim " << _dim << std::endl;
-    std::cout << "Num cells " << _num_cells << " Num nodes " << cells_to_mesh_entities.num_nodes() << std::endl;
     assert(_num_cells == cells_to_mesh_entities.num_nodes());
     _num_mesh_entities_per_cell = cells_to_mesh_entities.num_links(0);
     if (_num_cells > 0 && _num_mesh_entities_per_cell > 0) {

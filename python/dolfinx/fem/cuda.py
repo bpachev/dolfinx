@@ -62,7 +62,7 @@ class CUDAAssembler:
         accumulated.
 
     """
-    self.copy_form_to_device(a)
+    self._copy_form_to_device(a)
     if mat is None:
       petsc_mat = _cpp.fem.petsc.create_matrix_with_fixed_pattern(a._cpp_object)
       mat = CUDAMatrix(self._ctx, petsc_mat)
@@ -89,7 +89,7 @@ class CUDAAssembler:
         coeffs: Form coefficients
     """
 
-    self.copy_form_to_device(b)
+    self._copy_form_to_device(b)
     if vec is None:
       petsc_vec = create_petsc_vector(b)
       vec = CUDAVector(self._ctx, petsc_vec)
@@ -98,8 +98,64 @@ class CUDAAssembler:
       b._cuda_mesh, vec._cpp_object)
     return vec
 
+  def apply_lifting(self,
+    b: CUDAVector,
+    a: list[Form],
+    bcs: list[list[DirichletBC]],
+    x0: typing.optional[list[CUDAVector]] = None,
+    scale: float = 1.0
+  ):
+    """GPU equivalent of apply_lifting
 
-  def copy_form_to_device(self, form: Form):
+    Args:
+       b: CUDAVector to modify
+       a: list of forms to lift
+       bcs: list of boundary condition lists
+       x0: optional list of shift vectors for lifting
+       scale: scale of lifting
+    """
+  
+    x0 = [] if x0 is None else [x._cpp_object for x in x0]
+    _bcs = [[bc._cpp_object for bc in bc_list] for bc_list in bcs]
+    cuda_forms = []
+    cuda_mesh = None
+    for form in a:
+      self._copy_form_to_device(form)
+      cuda_forms.append(form._cuda_form)
+      if cuda_mesh is None: cuda_mesh = form._cuda_mesh
+
+    _cpp.fem.apply_lifting_on_device(
+      self._ctx, self._cpp_object,
+      cuda_forms, cuda_mesh,
+      b._cpp_object, _bcs, x0, scale
+    )
+
+  def set_bc(self,
+    b: CUDAVector,
+    bcs: list[DirichletBC],
+    x0: typing.Optional[CUDAVector] = None,
+    scale: float = 1.0
+  ):
+    """Set boundary conditions on device.
+
+    Args:
+     b: vector to modify
+     x0: optional 
+    """
+
+    _bcs = [bc._cpp_object for bc in bcs]
+    if x0 is None:
+      _cpp.fem.set_bc_on_device(
+        self._ctx, self._cpp_object, 
+        b._cpp_object, _bcs, scale
+      )
+    else:
+      _cpp.fem.set_bc_on_device(
+        self._ctx, self._cpp_object,
+        b._cpp_object, _bcs, x0._cpp_object, scale
+      )
+
+  def _copy_form_to_device(self, form: Form):
     """Copy all needed assembly data structures to the device.
     """
     
@@ -107,7 +163,7 @@ class CUDAAssembler:
     if hasattr(form, 'cuda_form'): return
 
     # now determine the Mesh object corresponding to this form
-    form._cuda_mesh = self.copy_mesh_to_device(form.mesh)
+    form._cuda_mesh = self._copy_mesh_to_device(form.mesh)
     # functionspaces
     coeffs = form._cpp_object.coefficients
     for space in form._cpp_object.function_spaces:
@@ -127,7 +183,7 @@ class CUDAAssembler:
     cuda_form.compile(self._ctx, max_threads_per_block=1024, min_blocks_per_multiprocessor=1)
     form._cuda_form = cuda_form
 
-  def copy_mesh_to_device(self, cpp_mesh: typing.Union[_cpp.mesh.Mesh_float32, _cpp.mesh.Mesh_float64]):
+  def _copy_mesh_to_device(self, cpp_mesh: typing.Union[_cpp.mesh.Mesh_float32, _cpp.mesh.Mesh_float64]):
     """Copy mesh to device.
     """
 

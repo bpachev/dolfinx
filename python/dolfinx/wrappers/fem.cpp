@@ -862,7 +862,6 @@ void declare_cuda_objects(nb::module_& m)
       .def(
           "__init__",
           [](dolfinx::la::CUDAVector* cuvec, const dolfinx::CUDA::Context& cuda_context, Vec x) {
-            std::cout << "Creating cuda vector" << std::endl;
             new (cuvec) dolfinx::la::CUDAVector(cuda_context, x);
           }, nb::arg("context"), nb::arg("x"))
       .def_prop_ro("vector",
@@ -958,7 +957,7 @@ void declare_cuda_funcs(nb::module_& m)
            dolfinx::fem::CUDAForm<T,U>& cuda_form,
            dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
            dolfinx::la::CUDAVector& cuda_b)
-           {
+         {
           
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
             cuda_form.dofmap(0);
@@ -977,7 +976,97 @@ void declare_cuda_funcs(nb::module_& m)
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"), nb::arg("b"),
         "Assemble vector on GPU."
-  ); 
+  );
+
+  m.def("apply_lifting_on_device",
+        [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+           std::vector<std::shared_ptr<dolfinx::fem::CUDAForm<T,U>>>& cuda_form,
+           dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
+           dolfinx::la::CUDAVector& cuda_b,
+           std::vector<std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>>>& bcs,
+           std::vector<std::shared_ptr<dolfinx::la::CUDAVector>>& cuda_x0,
+           float scale)
+        {
+          // TODO we really should avoid repeated instantiation of CUDA boundary conditions. . . .
+          // probably what's needed is to attach the CUDA object to the Python one. . . .
+          // and then check for updates. . . .
+          bool missing_x0 = (cuda_x0.size() == 0);
+          if (bcs.size() != cuda_form.size()) throw std::runtime_error("Number of bc lists must match number of forms!");
+          if (!missing_x0 && (cuda_x0.size() != cuda_form.size())) 
+            throw std::runtime_error("Number of x0 vectors must match number of forms!");
+
+          for (size_t i = 0; i < cuda_form.size(); i++) {
+            auto form = cuda_form[i];
+            auto bcs1 = form->bc(cuda_context, 1, bcs[i]);
+            form->coefficients().copy_coefficients_to_device(cuda_context);
+            assembler.pack_coefficients(
+              cuda_context, form->coefficients(), false); 
+            if (missing_x0) {
+              la::petsc::Vector petsc_x0(*form->form()->function_spaces()[1]->dofmap()->index_map,
+                    form->form()->function_spaces()[1]->dofmap()->index_map_bs());
+              dolfinx::la::CUDAVector default_x0(cuda_context, petsc_x0.vec());
+              assembler.zero_vector_entries(cuda_context, default_x0);
+              assembler.lift_bc(
+                cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
+                form->integrals(), form->constants(), form->coefficients(),
+                bcs1, default_x0, scale, cuda_b, false
+              );
+            }
+            else {
+              assembler.lift_bc(
+                cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
+                form->integrals(), form->constants(), form->coefficients(),
+                bcs1, *cuda_x0[i], scale, cuda_b, false
+              );
+            }
+          }
+
+          cuda_b.copy_vector_values_to_host(cuda_context);
+        },
+        nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"), nb::arg("b"),
+        nb::arg("bcs"), nb::arg("x0"), nb::arg("scale"),
+        "Apply lifting on GPU" 
+  );
+
+  m.def("set_bc_on_device",
+        [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+           dolfinx::la::CUDAVector& cuda_b,
+           std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs,
+           dolfinx::la::CUDAVector& cuda_x0,
+           float scale)
+        {
+          if (bcs.size() == 0) return;
+          auto cuda_bc0 = dolfinx::fem::CUDADirichletBC<T,U>(cuda_context, *bcs[0]->function_space(), bcs);
+          assembler.set_bc(cuda_context, cuda_bc0, cuda_x0, scale, cuda_b);
+          cuda_b.copy_vector_values_to_host(cuda_context);
+        },
+        nb::arg("context"), nb::arg("assembler"), nb::arg("b"),
+        nb::arg("bcs"), nb::arg("x0"), nb::arg("scale"),
+        "Set boundary conditions on GPU"
+  );
+
+  m.def("set_bc_on_device",
+        [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+           dolfinx::la::CUDAVector& cuda_b,
+           std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs,
+           float scale)
+        {
+          if (bcs.size() == 0) return;
+          auto V = bcs[0]->function_space();
+          auto cuda_bc0 = dolfinx::fem::CUDADirichletBC<T,U>(cuda_context, *V, bcs);
+          // TODO fix this so it doesn't require creation of a dummy x0 vector
+          la::petsc::Vector petsc_x0(*V->dofmap()->index_map,
+                V->dofmap()->index_map_bs());
+          dolfinx::la::CUDAVector default_x0(cuda_context, petsc_x0.vec());
+          assembler.zero_vector_entries(cuda_context, default_x0);
+          assembler.set_bc(cuda_context, cuda_bc0, default_x0, scale, cuda_b);
+          cuda_b.copy_vector_values_to_host(cuda_context);
+        },
+        nb::arg("context"), nb::arg("assembler"), nb::arg("b"),
+        nb::arg("bcs"), nb::arg("scale"),
+        "Set boundary conditions on GPU"
+  );
+ 
 }
 
 #endif

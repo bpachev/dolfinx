@@ -86,6 +86,8 @@ public:
 
   std::shared_ptr<const CUDADofMap> dofmap(size_t i) {return _form->function_spaces()[i]->cuda_dofmap(); }
 
+  Form<T,U>* form() { return _form; }
+
   CUDADirichletBC<T,U> bc(
     const CUDA::Context& cuda_context, size_t i,
     std::vector<std::shared_ptr<const DirichletBC<T,U>>> bcs)
