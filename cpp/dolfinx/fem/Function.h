@@ -20,6 +20,7 @@
 #if defined(HAS_CUDA_TOOLKIT)
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/la/CUDAVector.h>
+#include <dolfinx/la/petsc.h>
 #endif
 #include <functional>
 #include <memory>
@@ -60,9 +61,6 @@ public:
       : _function_space(V),
         _x(std::make_shared<la::Vector<value_type>>(
             V->dofmap()->index_map, V->dofmap()->index_map_bs()))
-  #if defined(HAS_CUDA_TOOLKIT)
-	,_cuda_vector(nullptr)
-  #endif
   {
     if (!V->component().empty())
     {
@@ -80,14 +78,14 @@ public:
       std::shared_ptr<const FunctionSpace<geometry_type>> V)
       : _function_space(V),
         _x(std::make_shared<la::Vector<value_type>>(
-            V->dofmap()->index_map, V->dofmap()->index_map_bs())),
-	_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(cuda_context, _x))
+            V->dofmap()->index_map, V->dofmap()->index_map_bs()))
   {
     if (!V->component().empty())
     {
       throw std::runtime_error("Cannot create Function from subspace. Consider "
                                "collapsing the function space");
     }
+    _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(cuda_context, la::petsc::create_vector_wrap(*_x)));
   }
   #endif
 
@@ -105,7 +103,6 @@ public:
   {
     // We do not check for a subspace since this constructor is used for
     // creating subfunctions
-
     // Assertion uses '<=' to deal with sub-functions
     assert(V->dofmap());
     assert(V->dofmap()->index_map->size_global() * V->dofmap()->index_map_bs()
@@ -159,7 +156,6 @@ public:
       assert(map[i] < x_old.size());
       x_new[i] = x_old[map[i]];
     }
-
     return Function(
         std::make_shared<FunctionSpace<geometry_type>>(std::move(V)), x);
   }
@@ -193,22 +189,23 @@ public:
           "Cannot access a non-const vector from a subfunction");
     }
 
-    if (!_cuda_vector) {
-      _cuda_vector = std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, _x);
+
+    if (!_x->cuda_vector()) {
+      _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
+        cuda_context, la::petsc::create_vector_wrap(*_x)));
     }
-    return *_cuda_vector.get();
+    return *_x->cuda_vector().get();
   }
 
   /// @brief Return vector of expansion coefficients (const version)
   /// @return The vector of expansion coefficients
   const la::CUDAVector& cuda_vector(const CUDA::Context& cuda_context) const
   {
-    if (!_cuda_vector) {
-      _cuda_vector = std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, _x);
+    if (!_x->cuda_vector()) {
+      _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
+        cuda_context, la::petsc::create_vector_wrap(*_x)));
     }
-    return *_cuda_vector.get();
+    return *_x->cuda_vector().get();
   }
   #endif
 

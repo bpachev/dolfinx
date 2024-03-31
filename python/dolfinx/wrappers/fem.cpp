@@ -920,10 +920,8 @@ void declare_cuda_funcs(nb::module_& m)
             cuda_form.dofmap(0);
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap1 =
             cuda_form.dofmap(1);
-
           dolfinx::fem::CUDADirichletBC<T,U> cuda_bc0 = cuda_form.bc(cuda_context, 0, bcs);
           dolfinx::fem::CUDADirichletBC<T,U> cuda_bc1 = cuda_form.bc(cuda_context, 1, bcs);
-
           // should probably make this its own function and allow for partial copies
           // as some coefficients will remain unchanged
           // However, for now we'll copy each time to ensure correctness 

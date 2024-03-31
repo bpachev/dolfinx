@@ -22,6 +22,8 @@
 namespace dolfinx::la
 {
 
+class CUDAVector;
+
 /// Distributed vector
 ///
 /// @tparam T Scalar type
@@ -49,6 +51,9 @@ public:
         _bs(bs), _buffer_local(_scatterer->local_buffer_size()),
         _buffer_remote(_scatterer->remote_buffer_size()),
         _x(bs * (map->size_local() + map->num_ghosts()))
+#ifdef HAS_CUDA_TOOLKIT
+        ,_cuda_vector(nullptr)
+#endif
   {
   }
 
@@ -57,6 +62,9 @@ public:
       : _map(x._map), _scatterer(x._scatterer), _bs(x._bs),
         _request(1, MPI_REQUEST_NULL), _buffer_local(x._buffer_local),
         _buffer_remote(x._buffer_remote), _x(x._x)
+#ifdef HAS_CUDA_TOOLKIT
+        ,_cuda_vector(nullptr)
+#endif
   {
   }
 
@@ -67,6 +75,9 @@ public:
         _request(std::exchange(x._request, {MPI_REQUEST_NULL})),
         _buffer_local(std::move(x._buffer_local)),
         _buffer_remote(std::move(x._buffer_remote)), _x(std::move(x._x))
+#ifdef HAS_CUDA_TOOLKIT
+        ,_cuda_vector(x._cuda_vector)
+#endif
   {
   }
 
@@ -193,6 +204,14 @@ public:
 
   /// Get local part of the vector
   std::span<value_type> mutable_array() { return std::span(_x); }
+#ifdef HAS_CUDA_TOOLKIT
+
+  // set the underlying CUDAVector
+  void set_cuda_vector(std::shared_ptr<CUDAVector> cuda_x) { _cuda_vector = cuda_x;}
+  
+  // get the CUDAVector
+  std::shared_ptr<CUDAVector> cuda_vector() { return _cuda_vector;}
+#endif
 
 private:
   // Map describing the data layout
@@ -212,6 +231,11 @@ private:
 
   // Vector data
   container_type _x;
+
+#ifdef HAS_CUDA_TOOLKIT
+  // pointer to cuda vector
+  mutable std::shared_ptr<CUDAVector> _cuda_vector;
+#endif
 };
 
 /// Compute the inner product of two vectors. The two vectors must have

@@ -7,8 +7,8 @@
 #pragma once
 
 #include <dolfinx/common/CUDA.h>
-#include <dolfinx/la/Vector.h>
-#include <dolfinx/la/petsc.h>
+//#include <dolfinx/la/Vector.h>
+//#include <dolfinx/la/petsc.h>
 #if defined(HAS_CUDA_TOOLKIT)
 #include <cuda.h>
 #endif
@@ -42,11 +42,11 @@ public:
       bool include_ghosts = true);
 
 
-  template <dolfinx::scalar T>
+  /*template <dolfinx::scalar T>
   CUDAVector(const CUDA::Context& cuda_context, std::shared_ptr<la::Vector<T>> x)
    : CUDAVector(cuda_context, la::petsc::create_vector_wrap(*x))
   {
-  }
+  }*/
 
   /// Destructor
   ~CUDAVector();

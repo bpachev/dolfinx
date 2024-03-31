@@ -12,7 +12,7 @@ from dolfinx.fem.bcs import DirichletBC
 from dolfinx.fem.forms import Form
 from dolfinx.fem.function import Function, FunctionSpace
 from dolfinx.mesh import Mesh
-from dolfinx.fem.petsc import create_vector as create_petsc_vector
+from dolfinx.fem.petsc import create_vector as create_petsc_vector, create_matrix as create_petsc_matrix
 from petsc4py import PETSc
 import gc
 
@@ -64,8 +64,7 @@ class CUDAAssembler:
     """
     self._copy_form_to_device(a)
     if mat is None:
-      petsc_mat = _cpp.fem.petsc.create_matrix_with_fixed_pattern(a._cpp_object)
-      mat = CUDAMatrix(self._ctx, petsc_mat)
+      mat = self.create_matrix(a)
 
     bcs = [] if bcs is None else [bc._cpp_object for bc in bcs] 
     _cpp.fem.assemble_matrix_on_device(
@@ -91,12 +90,25 @@ class CUDAAssembler:
 
     self._copy_form_to_device(b)
     if vec is None:
-      petsc_vec = create_petsc_vector(b)
-      vec = CUDAVector(self._ctx, petsc_vec)
+      vec = self.create_vector(b)
     
     _cpp.fem.assemble_vector_on_device(self._ctx, self._cpp_object, b._cuda_form,
       b._cuda_mesh, vec._cpp_object)
     return vec
+
+  def create_matrix(self, a: Form) -> CUDAMatrix:
+    """Create a CUDAMatrix from a given form
+    """
+
+    petsc_mat = create_petsc_matrix(a)
+    return CUDAMatrix(self._ctx, petsc_mat)
+
+  def create_vector(self, b: Form) -> CUDAVector:
+    """Create a CUDAVector from a given form
+    """
+
+    petsc_vec = create_petsc_vector(b)
+    return CUDAVector(self._ctx, petsc_vec)
 
   def apply_lifting(self,
     b: CUDAVector,
@@ -199,12 +211,22 @@ class CUDAVector:
   """Vector on device
   """
 
-  def __init__(self, ctx, petsc_vec):
+  def __init__(self, ctx, vec):
     """Initialize the vector
     """
 
-    self._petsc_vec = petsc_vec
-    self._cpp_object = _cpp.fem.CUDAVector(ctx, petsc_vec)
+    if type(vec) is la.Vector:
+      self._petsc_vec = la.create_petsc_vector_wrap(vec)
+      # check if vector already has cuda vector
+      if vec._cpp_object.has_cuda_vector():
+        self._cpp_object = vec.cpp_object.cuda_vector
+      else:
+        # otherwise create it
+        self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
+        vec._cpp_object.set_cuda_vector(self._cpp_object)
+    else:
+      self._petsc_vec = vec
+      self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
 
   def vector(self):
     """Return underlying PETSc vector
