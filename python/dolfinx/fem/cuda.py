@@ -12,6 +12,7 @@ from dolfinx.fem.bcs import DirichletBC
 from dolfinx.fem.forms import Form
 from dolfinx.fem.function import Function, FunctionSpace
 from dolfinx.mesh import Mesh
+from dolfinx import fem as fe
 from dolfinx.fem.petsc import create_vector as create_petsc_vector, create_matrix as create_petsc_matrix
 from petsc4py import PETSc
 import gc
@@ -99,8 +100,7 @@ class CUDAAssembler:
   def create_matrix(self, a: Form) -> CUDAMatrix:
     """Create a CUDAMatrix from a given form
     """
-
-    petsc_mat = create_petsc_matrix(a)
+    petsc_mat = _cpp.fem.petsc.create_matrix_with_fixed_pattern(a._cpp_object)
     return CUDAMatrix(self._ctx, petsc_mat)
 
   def create_vector(self, b: Form) -> CUDAVector:
@@ -219,7 +219,7 @@ class CUDAVector:
       self._petsc_vec = la.create_petsc_vector_wrap(vec)
       # check if vector already has cuda vector
       if vec._cpp_object.has_cuda_vector():
-        self._cpp_object = vec.cpp_object.cuda_vector
+        self._cpp_object = vec._cpp_object.cuda_vector
       else:
         # otherwise create it
         self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
