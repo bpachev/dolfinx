@@ -15,6 +15,7 @@
 #include <petscmat.h>
 #include <petscoptions.h>
 #include <petscvec.h>
+#include <petscmacros.h>
 #include <span>
 #include <string>
 #include <vector>
@@ -84,6 +85,30 @@ Vec create_vector_wrap(const la::Vector<V>& x)
   assert(x.index_map());
   return create_vector_wrap(*x.index_map(), x.bs(), x.array());
 }
+
+#if PetscDefined(HAVE_CUDA)
+/// Create a PETSc Vec that wraps the data in an array
+/// @param[in] map The index map that describes the parallel layout of
+/// the distributed vector (by block)
+/// @param[in] bs Block size
+/// @param[in] x The local part of the vector, including ghost entries
+/// @return A PETSc Vec object that shares the data in @p x
+/// @note The array `x` must be kept alive to use the PETSc Vec object
+/// @note The caller should call VecDestroy to free the return PETSc
+/// vector
+Vec create_vector_cuda_wrap(const common::IndexMap& map, int bs,
+                       std::span<const PetscScalar> x);
+
+/// Create a PETSc CUDA Vec that wraps the data in an array
+/// @param[in] x The vector to be wrapped
+/// @return A PETSc CUDA Vec object that shares the data in @p x
+template <class V>
+Vec create_vector_cuda_wrap(const la::Vector<V>& x)
+{
+  assert(x.index_map());
+  return create_vector_cuda_wrap(*x.index_map(), x.bs(), x.array());
+}
+#endif
 
 /// @todo This function could take just the local sizes
 ///

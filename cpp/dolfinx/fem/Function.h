@@ -85,7 +85,13 @@ public:
       throw std::runtime_error("Cannot create Function from subspace. Consider "
                                "collapsing the function space");
     }
-    _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(cuda_context, la::petsc::create_vector_wrap(*_x)));
+#if PetscDefined(HAVE_CUDA)
+     Vec v = la::petsc::create_vector_cuda_wrap(*_x);
+#else
+     Vec v = la::petsc::create_vector_wrap(*_x);
+#endif
+      _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
+        cuda_context, v));
   }
   #endif
 
@@ -191,8 +197,13 @@ public:
 
 
     if (!_x->cuda_vector()) {
+#if PetscDefined(HAVE_CUDA)
+     Vec v = la::petsc::create_vector_cuda_wrap(*_x);
+#else
+     Vec v = la::petsc::create_vector_wrap(*_x);
+#endif
       _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, la::petsc::create_vector_wrap(*_x)));
+        cuda_context, v));
     }
     return *_x->cuda_vector().get();
   }
@@ -202,8 +213,13 @@ public:
   const la::CUDAVector& cuda_vector(const CUDA::Context& cuda_context) const
   {
     if (!_x->cuda_vector()) {
+#if PetscDefined(HAVE_CUDA)
+     Vec v = la::petsc::create_vector_cuda_wrap(*_x);
+#else
+     Vec v = la::petsc::create_vector_wrap(*_x);
+#endif
       _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, la::petsc::create_vector_wrap(*_x)));
+        cuda_context, v));
     }
     return *_x->cuda_vector().get();
   }

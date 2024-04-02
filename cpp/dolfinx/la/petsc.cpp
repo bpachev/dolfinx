@@ -122,6 +122,25 @@ Vec la::petsc::create_vector_wrap(const common::IndexMap& map, int bs,
   assert(vec);
   return vec;
 }
+#if PetscDefined(HAVE_CUDA)
+//-----------------------------------------------------------------------------
+Vec la::petsc::create_vector_cuda_wrap(const common::IndexMap& map, int bs,
+                                  std::span<const PetscScalar> x)
+{
+  const std::int32_t size_local = bs * map.size_local();
+  const std::int64_t size_global = bs * map.size_global();
+  const std::vector<PetscInt> ghosts(map.ghosts().begin(), map.ghosts().end());
+  Vec vec;
+  PetscErrorCode ierr;
+  ierr = VecCreateMPICUDAWithArrays(map.comm(), bs, size_local, size_global,
+                                    x.data(), NULL, &vec);
+  CHECK_ERROR("VecCreateMPICUDAWithArrays");
+
+  assert(vec);
+  return vec;
+}
+
+#endif
 //-----------------------------------------------------------------------------
 std::vector<IS> la::petsc::create_index_sets(
     const std::vector<

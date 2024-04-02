@@ -16,6 +16,7 @@ from dolfinx import fem as fe
 from dolfinx.fem.petsc import create_vector as create_petsc_vector, create_matrix as create_petsc_matrix
 from petsc4py import PETSc
 import gc
+import numpy as np
 
 def init_device():
   """Initialize PETSc device
@@ -24,6 +25,16 @@ def init_device():
   d = PETSc.Device()
   d.create(PETSc.Device.Type.CUDA)
   return d
+
+def create_petsc_cuda_vector(L: Form) -> PETSc.Vec:
+  """Create PETSc Vector on device
+  """
+  index_map = L.function_spaces[0].dofmap.index_map
+  bs = L.function_spaces[0].dofmap.index_map_bs
+  size = (index_map.size_local * bs, index_map.size_global * bs)
+  # we need to provide at least the local CPU array
+  arr = np.zeros(size[0])
+  return PETSc.Vec().createCUDAWithArrays(cpuarray=arr, size=size, bsize=bs, comm=index_map.comm)
 
 class CUDAAssembler:
   """Class for assembly on the GPU
@@ -107,7 +118,7 @@ class CUDAAssembler:
     """Create a CUDAVector from a given form
     """
 
-    petsc_vec = create_petsc_vector(b)
+    petsc_vec = create_petsc_cuda_vector(b)
     return CUDAVector(self._ctx, petsc_vec)
 
   def apply_lifting(self,
