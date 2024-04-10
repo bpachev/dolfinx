@@ -147,6 +147,9 @@ Mat create_matrix(MPI_Comm comm, const SparsityPattern& sp,
 /// returned object.
 Mat create_matrix_with_fixed_pattern(MPI_Comm comm, const SparsityPattern& sp);
 
+#ifdef HAS_CUDA_TOOLKIT
+Mat create_cuda_matrix(MPI_Comm comm, const SparsityPattern& sp);
+#endif
 /// Create PETSc MatNullSpace. Caller is responsible for destruction
 /// returned object.
 /// @param [in] comm The MPI communicator

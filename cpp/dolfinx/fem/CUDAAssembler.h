@@ -154,7 +154,7 @@ public:
 
     int min_grid_size;
     int block_size;
-    int shared_mem_size_per_thread_block;
+    int shared_mem_size_per_thread_block = 0;
     cuda_err = cuOccupancyMaxPotentialBlockSize(
       &min_grid_size, &block_size, kernel, 0, 0, 0);
     if (cuda_err != CUDA_SUCCESS) {
@@ -205,6 +205,7 @@ public:
       block_dim_x, block_dim_y, block_dim_z,
       shared_mem_size_per_thread_block,
       stream, kernel_parameters, NULL);
+
     if (cuda_err != CUDA_SUCCESS) {
       cuGetErrorString(cuda_err, &cuda_err_description);
       throw std::runtime_error(
@@ -339,7 +340,7 @@ public:
     // Compute a block size with high occupancy
     int min_grid_size;
     int block_size;
-    int shared_mem_size_per_thread_block;
+    int shared_mem_size_per_thread_block = 0;
     cuda_err = cuOccupancyMaxPotentialBlockSize(
       &min_grid_size, &block_size, kernel, 0, 0, 0);
     if (cuda_err != CUDA_SUCCESS) {
@@ -773,7 +774,7 @@ public:
     // Compute a block size with high occupancy
     int min_grid_size;
     int block_size;
-    int shared_mem_size_per_thread_block;
+    int shared_mem_size_per_thread_block = 0;
     cuda_err = cuOccupancyMaxPotentialBlockSize(
       &min_grid_size, &block_size, kernel, 0, 0, 0);
     if (cuda_err != CUDA_SUCCESS) {

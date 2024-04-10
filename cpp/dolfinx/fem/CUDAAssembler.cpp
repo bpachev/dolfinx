@@ -296,7 +296,7 @@ void CUDAAssembler::zero_matrix_entries(
 
   int min_grid_size;
   int block_size;
-  int shared_mem_size_per_thread_block;
+  int shared_mem_size_per_thread_block = 0;
   cuda_err = cuOccupancyMaxPotentialBlockSize(
     &min_grid_size, &block_size, kernel, 0, 0, 0);
   if (cuda_err != CUDA_SUCCESS) {
@@ -390,7 +390,7 @@ void CUDAAssembler::zero_vector_entries(
 
   int min_grid_size;
   int block_size;
-  int shared_mem_size_per_thread_block;
+  int shared_mem_size_per_thread_block = 0;
   cuda_err = cuOccupancyMaxPotentialBlockSize(
     &min_grid_size, &block_size, kernel, 0, 0, 0);
   if (cuda_err != CUDA_SUCCESS) {
