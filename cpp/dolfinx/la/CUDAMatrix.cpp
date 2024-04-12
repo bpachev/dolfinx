@@ -9,6 +9,7 @@
 #include <dolfinx/la/CUDASeqMatrix.h>
 #include <dolfinx/la/utils.h>
 #include <dolfinx/la/petsc.h>
+#include <iostream>
 #include <vector>
 
 #if defined(HAS_CUDA_TOOLKIT)
@@ -228,4 +229,16 @@ void CUDAMatrix::apply(MatAssemblyType type)
     petsc::error(ierr, __FILE__, "MatAssemblyEnd");
 }
 //-----------------------------------------------------------------------------
+void CUDAMatrix::debug_dump()
+{
+  if (_diag) {
+    std::cout << "Dumping diag matrix." << std::endl;
+    _diag->debug_dump();
+  }
+  if (_offdiag) {
+    std::cout << "Dumping offdiag matrix." << std::endl;
+    _offdiag->debug_dump();
+  }
+}
+
 #endif

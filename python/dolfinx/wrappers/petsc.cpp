@@ -259,6 +259,9 @@ void petsc_fem_module(nb::module_& m)
   m.def("create_matrix_with_fixed_pattern", dolfinx::fem::petsc::create_matrix_with_fixed_pattern<PetscReal>,
         nb::rv_policy::take_ownership, nb::arg("a"),
         "Create a PETSc Mat for bilnear form with finalized sparsity pattern.");
+  m.def("create_cuda_matrix", dolfinx::fem::petsc::create_cuda_matrix<PetscReal>,
+        nb::rv_policy::take_ownership, nb::arg("a"),
+        "Create a PETSc CUDA Mat for a bilinear form.");
 #endif
 
   // PETSc Matrices

@@ -850,6 +850,7 @@ void declare_cuda_objects(nb::module_& m)
           [](dolfinx::la::CUDAMatrix* cumat, const dolfinx::CUDA::Context& cuda_context, Mat A) {
             new (cumat) dolfinx::la::CUDAMatrix(cuda_context, A, false, false);
           }, nb::arg("context"), nb::arg("A"))
+      .def("debug_dump", &dolfinx::la::CUDAMatrix::debug_dump)
       .def_prop_ro("mat",
           [](dolfinx::la::CUDAMatrix& cumat) {
             Mat A = cumat.mat();

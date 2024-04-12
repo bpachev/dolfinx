@@ -16,6 +16,10 @@
 #include <iostream>
 #include <sstream>
 
+#if defined(HAS_CUDA_TOOLKIT)
+#include <cuda.h>
+#endif
+
 using namespace dolfinx;
 using namespace dolfinx::la;
 
@@ -140,6 +144,34 @@ Vec la::petsc::create_vector_cuda_wrap(const common::IndexMap& map, int bs,
   return vec;
 }
 
+void la::petsc::dump_device_vector(Vec v)
+{
+    // Check the type of vector
+  VecType vector_type;
+  PetscErrorCode ierr = VecGetType(v, &vector_type);
+  if (ierr != 0)
+      la::petsc::error(ierr, __FILE__, "VecGetType");
+
+  if (strcmp(vector_type, VECCUDA) == 0 ||
+      strcmp(vector_type, VECMPICUDA) == 0 ||
+      strcmp(vector_type, VECSEQCUDA) == 0)
+  {
+    CUdeviceptr v_dvals;
+    VecCUDAGetArrayRead(v, (const PetscScalar **) &v_dvals);
+    PetscInt v_size;
+    VecGetSize(v, &v_size);
+    size_t v_data_size = v_size * sizeof(PetscScalar);
+    PetscScalar* v_cpu_vec = (PetscScalar*)malloc(v_data_size);
+    cuMemcpyDtoH(v_cpu_vec, v_dvals, v_data_size);
+    float sum = 0.0;
+    for (int j = 0; j < v_size; j++) sum += v_cpu_vec[j]*v_cpu_vec[j];
+    std::cout << "device 2-norm, " << sqrt(sum) << " nvals " << v_data_size << std::endl;
+    free(v_cpu_vec);
+    VecCUDARestoreArrayRead(v, (const PetscScalar **) &v_dvals);
+  }
+  else std::cout << "Warning: trying to dump device vector for non-CUDA vector type " << vector_type << std::endl;
+
+}
 #endif
 //-----------------------------------------------------------------------------
 std::vector<IS> la::petsc::create_index_sets(

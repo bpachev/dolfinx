@@ -108,6 +108,9 @@ Vec create_vector_cuda_wrap(const la::Vector<V>& x)
   assert(x.index_map());
   return create_vector_cuda_wrap(*x.index_map(), x.bs(), x.array());
 }
+
+/// Given a PETSc Vec, dump the device values
+void dump_device_vector(Vec v);
 #endif
 
 /// @todo This function could take just the local sizes

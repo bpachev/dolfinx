@@ -118,6 +118,8 @@ public:
   /// @param[in] type MAT_FLUSH_ASSEMBLY or MAT_FINAL_ASSEMBLY
   void apply(MatAssemblyType type);
 
+  void debug_dump();
+
 private:
   /// Handle to the corresponding PETSc matrix object
   Mat _A;

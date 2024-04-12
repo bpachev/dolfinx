@@ -548,4 +548,28 @@ void CUDASeqMatrix::apply(MatAssemblyType type)
     petsc::error(ierr, __FILE__, "MatAssemblyEnd");
 }
 //-----------------------------------------------------------------------------
+void CUDASeqMatrix::debug_dump()
+{
+  CUdeviceptr dvals;
+  int ierr = MatSeqAIJCUSPARSEGetArray(_A, (PetscScalar **) &dvals);
+  if (ierr != 0)
+    la::petsc::error(ierr, __FILE__, "MatSeqAIJCUSPARSEGetArray");
+  std::cout << "Have dvals" << std::endl;
+  size_t vals_size = sizeof(PetscScalar) * _num_local_nonzeros;
+  PetscScalar* vals = (PetscScalar*) malloc(vals_size);
+  std::cout << "calling cuMemcpy" << std::endl;
+  auto cuda_err = cuMemcpyDtoH(vals, dvals, vals_size);
+  const char * cuda_err_description;
+  if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuMemcpyDtoH() failed with " + std::string(cuda_err_description) +
+        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+  }
+  std::cout << "finished calling cuMemcpy" << std::endl;
+  float sum = 0;
+  for (int i = 0; i < _num_local_nonzeros; i++) sum += vals[i];
+  std::cout << "Dumping CUDASeqMatrix: nnz " << _num_local_nonzeros << " mean " << (sum/_num_local_nonzeros) << std::endl;
+  free(vals);
+}
 #endif
