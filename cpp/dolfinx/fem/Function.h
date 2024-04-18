@@ -91,7 +91,7 @@ public:
      Vec v = la::petsc::create_vector_wrap(*_x);
 #endif
       _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, v));
+        cuda_context, v, false, false));
   }
   #endif
 
@@ -203,7 +203,7 @@ public:
      Vec v = la::petsc::create_vector_wrap(*_x);
 #endif
       _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, v));
+        cuda_context, v, false, false));
     }
     return *_x->cuda_vector().get();
   }
@@ -219,7 +219,7 @@ public:
      Vec v = la::petsc::create_vector_wrap(*_x);
 #endif
       _x->set_cuda_vector(std::make_shared<dolfinx::la::CUDAVector>(
-        cuda_context, v));
+        cuda_context, v, false, false));
     }
     return *_x->cuda_vector().get();
   }

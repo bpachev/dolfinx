@@ -157,7 +157,8 @@ class CUDAAssembler:
     b: CUDAVector,
     bcs: list[DirichletBC],
     x0: typing.Optional[CUDAVector] = None,
-    scale: float = 1.0
+    scale: float = 1.0,
+    V: FunctionSpace = None
   ):
     """Set boundary conditions on device.
 
@@ -166,16 +167,25 @@ class CUDAAssembler:
      x0: optional 
     """
 
+    # determine common function space
+    if V is None:
+      _V = bcs[0].function_space
+      if len(bcs) > 1:
+        if not all([_V.contains(bc.function_space) for bc in bcs[1:]]):
+          raise RuntimeWarning(f"Boundary conditions not all the same space! Please pass the parent space as a parameter.")
+    else:
+      _V = V._cpp_object
+
     _bcs = [bc._cpp_object for bc in bcs]
     if x0 is None:
       _cpp.fem.set_bc_on_device(
         self._ctx, self._cpp_object, 
-        b._cpp_object, _bcs, scale
+        b._cpp_object, _bcs, scale, _V
       )
     else:
       _cpp.fem.set_bc_on_device(
         self._ctx, self._cpp_object,
-        b._cpp_object, _bcs, x0._cpp_object, scale
+        b._cpp_object, _bcs, x0._cpp_object, scale, _V
       )
 
   def _copy_form_to_device(self, form: Form):
@@ -183,7 +193,7 @@ class CUDAAssembler:
     """
     
     # prevent duplicate initialization of CUDA data
-    if hasattr(form, 'cuda_form'): return
+    if hasattr(form, '_cuda_form'): return
 
     # now determine the Mesh object corresponding to this form
     form._cuda_mesh = self._copy_mesh_to_device(form.mesh)
@@ -251,7 +261,6 @@ class CUDAVector:
 
     # Ensure that the cpp CUDAVector is taken care of BEFORE the petsc vector. . . .
     del self._cpp_object
-    gc.collect()
 
 class CUDAMatrix:
   """Matrix on device
@@ -276,4 +285,10 @@ class CUDAMatrix:
 
     # make sure we delete the CUDAMatrix before the petsc matrix
     del self._cpp_object
-    gc.collect()
+   
+
+class CUDADirichletBCs:
+  """Represents a collection of boundary conditions
+  """
+
+  pass
