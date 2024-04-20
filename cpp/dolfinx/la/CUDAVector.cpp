@@ -580,11 +580,11 @@ void CUDAVector::copy_vector_values_to_device(
     }
 
   } else if (_dvalues_petsc_owned) {
-    // PetscScalar* values;
-    // ierr = VecGetArray(_x, &values);
-    // if (ierr != 0) la::petsc::error(ierr, __FILE__, "VecGetArray");
-    // ierr = VecRestoreArray(_x, &values);
-    // if (ierr != 0) la::petsc::error(ierr, __FILE__, "VecRestoreArray");
+     PetscScalar* values;
+     ierr = VecGetArrayWrite(_x, &values);
+     if (ierr != 0) la::petsc::error(ierr, __FILE__, "VecGetArrayWrite");
+     ierr = VecRestoreArrayWrite(_x, &values);
+     if (ierr != 0) la::petsc::error(ierr, __FILE__, "VecRestoreArrayWrite");
   }
 }
 //-----------------------------------------------------------------------------
