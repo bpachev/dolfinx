@@ -68,9 +68,7 @@ void declare_objects(nb::module_& m, const std::string& type)
           nb::rv_policy::reference_internal)
       .def("scatter_forward", &dolfinx::la::Vector<T>::scatter_fwd)
 #ifdef HAS_CUDA_TOOLKIT
-      .def("set_cuda_vector", &dolfinx::la::Vector<T>::set_cuda_vector)
-      .def_prop_ro("cuda_vector", &dolfinx::la::Vector<T>::cuda_vector)
-      .def("has_cuda_vector", [](dolfinx::la::Vector<T>& self) {return (self.cuda_vector()) ? true : false; })
+      .def("to_device", &dolfinx::la::Vector<T>::to_device)
 #endif
       .def(
           "scatter_reverse",

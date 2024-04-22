@@ -901,7 +901,7 @@ void declare_cuda_funcs(nb::module_& m)
   m.def("copy_function_to_device",
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::Function<T, U>& f)
         {
-          f.cuda_vector(cuda_context).copy_vector_values_to_device(cuda_context);
+          f.x()->to_device(cuda_context);
         },
         nb::arg("context"), nb::arg("f"), "Copy function data to GPU"); 
 

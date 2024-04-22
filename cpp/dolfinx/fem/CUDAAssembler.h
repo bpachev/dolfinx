@@ -134,8 +134,7 @@ public:
 
         std::vector<CUdeviceptr> coefficient_values(num_coefficients);
         for (int i = 0; i < num_coefficients; i++) {
-            const la::CUDAVector& cuda_x = _coefficients[i]->cuda_vector(cuda_context);
-            coefficient_values[i] = cuda_x.values();
+            coefficient_values[i] = _coefficients[i]->x()->device_values();
         }
         size_t coefficient_values_size = num_coefficients * sizeof(CUdeviceptr);
         cuda_err = cuMemcpyHtoD(
@@ -222,13 +221,6 @@ public:
         " at " + __FILE__ + ":" + std::to_string(__LINE__));
     }
 
-    {
-        auto _coefficients = coefficients.coefficients();
-        for (int i = 0; i < num_coefficients; i++) {
-            const la::CUDAVector& cuda_x = _coefficients[i]->cuda_vector(cuda_context);
-            cuda_x.restore_values();
-        }
-    }
   }
   //-----------------------------------------------------------------------------
   /// Assemble linear form into a vector. The vector must already be

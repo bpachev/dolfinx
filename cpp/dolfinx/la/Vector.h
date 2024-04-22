@@ -18,11 +18,14 @@
 #include <span>
 #include <type_traits>
 #include <vector>
+#ifdef HAS_CUDA_TOOLKIT
+#include <dolfinx/common/CUDA.h>
+#include "cuda.h"
+#endif
 
 namespace dolfinx::la
 {
 
-class CUDAVector;
 
 /// Distributed vector
 ///
@@ -52,7 +55,7 @@ public:
         _buffer_remote(_scatterer->remote_buffer_size()),
         _x(bs * (map->size_local() + map->num_ghosts()))
 #ifdef HAS_CUDA_TOOLKIT
-        ,_cuda_vector(nullptr)
+        ,_dvalues(0)
 #endif
   {
   }
@@ -63,7 +66,7 @@ public:
         _request(1, MPI_REQUEST_NULL), _buffer_local(x._buffer_local),
         _buffer_remote(x._buffer_remote), _x(x._x)
 #ifdef HAS_CUDA_TOOLKIT
-        ,_cuda_vector(nullptr)
+        ,_dvalues(0)
 #endif
   {
   }
@@ -76,7 +79,7 @@ public:
         _buffer_local(std::move(x._buffer_local)),
         _buffer_remote(std::move(x._buffer_remote)), _x(std::move(x._x))
 #ifdef HAS_CUDA_TOOLKIT
-        ,_cuda_vector(x._cuda_vector)
+        ,_dvalues(x._dvalues)
 #endif
   {
   }
@@ -86,6 +89,16 @@ public:
 
   /// Move Assignment operator
   Vector& operator=(Vector&& x) = default;
+
+  // Destructor
+  ~Vector()
+  {
+#ifdef HAS_CUDA_TOOLKIT
+    if (_dvalues) {
+      cuMemFree(_dvalues);
+    }
+#endif    
+  }
 
   /// Set all entries (including ghosts)
   /// @param[in] v The value to set all entries to (on calling rank)
@@ -206,11 +219,27 @@ public:
   std::span<value_type> mutable_array() { return std::span(_x); }
 #ifdef HAS_CUDA_TOOLKIT
 
-  // set the underlying CUDAVector
-  void set_cuda_vector(std::shared_ptr<CUDAVector> cuda_x) { _cuda_vector = cuda_x;}
-  
-  // get the CUDAVector
-  std::shared_ptr<CUDAVector> cuda_vector() { return _cuda_vector;}
+  /// Copy to device, allocating GPU memory if required
+  void to_device(const CUDA::Context& cuda_context)
+  {
+    const std::int32_t local_size = _bs * _map->size_local();
+    size_t dvalues_size = local_size * sizeof(value_type);
+    if (!_dvalues) {
+      // Allocate device-side values
+      CUDA::safeMemAlloc(&_dvalues, dvalues_size);
+    }
+
+    CUDA::safeMemcpyHtoD(_dvalues, _x.data(), dvalues_size);
+  }
+
+  /// Get pointer to vector data on device
+  CUdeviceptr device_values() const
+  {
+    if (!_dvalues) {
+      throw std::runtime_error("Must call to_device() before accessing device values for Vector!");
+    }
+    return _dvalues;
+  }  
 #endif
 
 private:
@@ -233,8 +262,8 @@ private:
   container_type _x;
 
 #ifdef HAS_CUDA_TOOLKIT
-  // pointer to cuda vector
-  mutable std::shared_ptr<CUDAVector> _cuda_vector;
+  // pointer to device values
+  mutable CUdeviceptr _dvalues;
 #endif
 };
 

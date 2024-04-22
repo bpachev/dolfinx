@@ -439,6 +439,18 @@ std::string CUDA::compile_cuda_cpp_to_ptx(
 }
 //-----------------------------------------------------------------------------
 
+void CUDA::safeMemAlloc(CUdeviceptr* dptr, size_t bytesize)
+{
+  const char * cuda_err_description;
+  CUresult cuda_err = cuMemAlloc(dptr, bytesize);
+  if (cuda_err != CUDA_SUCCESS) {
+    cuGetErrorString(cuda_err, &cuda_err_description);
+    throw std::runtime_error(
+        "cuMemAlloc() failed with " + std::string(cuda_err_description) +
+        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+  }  
+}
+
 void CUDA::safeMemcpyDtoH(void * dstHost, CUdeviceptr srcDevice, size_t ByteCount)
 {
   const char * cuda_err_description;
@@ -450,6 +462,19 @@ void CUDA::safeMemcpyDtoH(void * dstHost, CUdeviceptr srcDevice, size_t ByteCoun
         " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
   } 
 }
+
+void CUDA::safeMemcpyHtoD(CUdeviceptr dstDevice, void* srcHost, size_t ByteCount)
+{
+  const char * cuda_err_description;
+  CUresult cuda_err = cuMemcpyHtoD(dstDevice, srcHost, ByteCount);
+  if (cuda_err != CUDA_SUCCESS) {
+    cuGetErrorString(cuda_err, &cuda_err_description);
+    throw std::runtime_error(
+        "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
+        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+  }
+}
+
 
 void CUDA::safeDeviceGetAttribute(int * res, CUdevice_attribute attrib, CUdevice dev)
 {

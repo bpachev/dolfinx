@@ -207,60 +207,6 @@ public:
       }
     }
 
-  #if 0
-    // Pack coefficients into an array
-    _host_coefficient_values = pack_coefficients(*form);
-    _num_cells = _host_coefficient_values.rows();
-    _num_packed_coefficient_values_per_cell = _host_coefficient_values.cols();
-
-    // Allocate device-side storage for coefficient values
-    if (_num_cells > 0 && _num_packed_coefficient_values_per_cell > 0) {
-      size_t dpacked_coefficient_values_size =
-        _num_cells * _num_packed_coefficient_values_per_cell * sizeof(PetscScalar);
-      cuda_err = cuMemAlloc(
-        &_dpacked_coefficient_values, dpacked_coefficient_values_size);
-      if (cuda_err != CUDA_SUCCESS) {
-        cuGetErrorString(cuda_err, &cuda_err_description);
-        throw std::runtime_error(
-          "cuMemAlloc() failed with " + std::string(cuda_err_description) +
-          " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-      }
-
-      // Register host memory as page-locked before copying
-      _page_lock = page_lock;
-      if (_page_lock) {
-        cuda_err = cuMemHostRegister(
-          _host_coefficient_values.data(), dpacked_coefficient_values_size, 0);
-        if (cuda_err != CUDA_SUCCESS) {
-          cuGetErrorString(cuda_err, &cuda_err_description);
-          cuMemFree(_dpacked_coefficient_values);
-          throw std::runtime_error(
-            "cuMemHostRegister() failed with " + std::string(cuda_err_description) +
-            " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-        }
-      }
-
-      // Copy coefficient values to device
-      cuda_err = cuMemcpyHtoD(
-        _dpacked_coefficient_values, _host_coefficient_values.data(), dpacked_coefficient_values_size);
-      if (cuda_err != CUDA_SUCCESS) {
-        cuGetErrorString(cuda_err, &cuda_err_description);
-        if (_page_lock) {
-          cuda_err = cuMemHostUnregister(_host_coefficient_values.data());
-          if (cuda_err != CUDA_SUCCESS) {
-            const char * cuda_err_description;
-            cuGetErrorString(cuda_err, &cuda_err_description);
-            std::cerr << "cuMemHostUnregister() failed with " << cuda_err_description
-                      << " at " << __FILE__ << ":" << __LINE__ << std::endl;
-          }
-        }
-        cuMemFree(_dpacked_coefficient_values);
-        throw std::runtime_error(
-          "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
-          " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-      }
-    }
-  #endif
   }
 
   /// Destructor
@@ -268,18 +214,6 @@ public:
   {
     CUresult cuda_err;
     const char * cuda_err_description;
-
-  #if 0
-    if (_page_lock) {
-      cuda_err = cuMemHostUnregister(_host_coefficient_values.data());
-      if (cuda_err != CUDA_SUCCESS) {
-        cuGetErrorString(cuda_err, &cuda_err_description);
-        std::cerr << "cuMemHostUnregister() failed with " << cuda_err_description
-                  << " at " << __FILE__ << ":" << __LINE__ << std::endl;
-      }
-    }
-  #endif
-
     if (_coefficient_values)
       cuMemFree(_coefficient_values);
     if (_coefficient_values_offsets)
@@ -389,10 +323,8 @@ public:
     const CUDA::Context& cuda_context)
   {
     for (int i = 0; i < _coefficients.size(); i++) {
-      // TODO: We should probably try to avoid a const_cast here
-      la::CUDAVector& cuda_x = const_cast<la::CUDAVector&>(
-        _coefficients[i]->cuda_vector(cuda_context));
-      cuda_x.copy_vector_values_to_device(cuda_context);
+      std::shared_ptr<const la::Vector<T>> x = _coefficients[i]->x();
+      const_cast<la::Vector<T>*>(x.get())->to_device(cuda_context);
     }
   }
 

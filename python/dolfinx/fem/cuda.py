@@ -238,13 +238,7 @@ class CUDAVector:
 
     if type(vec) is la.Vector:
       self._petsc_vec = la.create_petsc_vector_wrap(vec)
-      # check if vector already has cuda vector
-      if vec._cpp_object.has_cuda_vector():
-        self._cpp_object = vec._cpp_object.cuda_vector
-      else:
-        # otherwise create it
-        self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
-        vec._cpp_object.set_cuda_vector(self._cpp_object)
+      self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
     else:
       self._petsc_vec = vec
       self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
