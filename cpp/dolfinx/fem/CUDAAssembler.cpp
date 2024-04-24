@@ -118,8 +118,9 @@ std::string cuda_kernel_set_bc(void)
     "    i < num_boundary_dofs;\n"
     "    i += blockDim.x * gridDim.x)\n"
     "  {\n"
+    "    double _x0 = (x0) ? x0[boundary_dofs[i]] : 0.0;\n"
     "    values[boundary_dofs[i]] =\n"
-    "      scale * (g[boundary_value_dofs[i]] - x0[boundary_dofs[i]]);\n"
+    "      scale * (g[boundary_value_dofs[i]] - _x0);\n"
     "  }\n"
     "}\n";
 }

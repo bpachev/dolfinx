@@ -125,7 +125,7 @@ class CUDAAssembler:
     b: CUDAVector,
     a: list[Form],
     bcs: list[list[DirichletBC]],
-    x0: typing.optional[list[CUDAVector]] = None,
+    x0: typing.optional[list[Vector]] = None,
     scale: float = 1.0
   ):
     """GPU equivalent of apply_lifting
@@ -236,12 +236,8 @@ class CUDAVector:
     """Initialize the vector
     """
 
-    if type(vec) is la.Vector:
-      self._petsc_vec = la.create_petsc_vector_wrap(vec)
-      self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
-    else:
-      self._petsc_vec = vec
-      self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
+    self._petsc_vec = vec
+    self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
 
   def vector(self):
     """Return underlying PETSc vector

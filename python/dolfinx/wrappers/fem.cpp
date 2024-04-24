@@ -983,7 +983,7 @@ void declare_cuda_funcs(nb::module_& m)
            dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
            dolfinx::la::CUDAVector& cuda_b,
            std::vector<std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>>>& bcs,
-           std::vector<std::shared_ptr<dolfinx::la::CUDAVector>>& cuda_x0,
+           std::vector<std::shared_ptr<dolfinx::la::Vector<T>>>& cuda_x0,
            float scale)
         {
           // TODO we really should avoid repeated instantiation of CUDA boundary conditions. . . .
@@ -999,25 +999,13 @@ void declare_cuda_funcs(nb::module_& m)
             auto bcs1 = form->bc(cuda_context, 1, bcs[i]);
             form->coefficients().copy_coefficients_to_device(cuda_context);
             assembler.pack_coefficients(
-              cuda_context, form->coefficients(), false); 
-            if (missing_x0) {
-              la::petsc::Vector petsc_x0(*form->form()->function_spaces()[1]->dofmap()->index_map,
-                    form->form()->function_spaces()[1]->dofmap()->index_map_bs());
-              dolfinx::la::CUDAVector default_x0(cuda_context, petsc_x0.vec());
-              assembler.zero_vector_entries(cuda_context, default_x0);
-              assembler.lift_bc(
-                cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
-                form->integrals(), form->constants(), form->coefficients(),
-                bcs1, default_x0, scale, cuda_b, false
-              );
-            }
-            else {
-              assembler.lift_bc(
-                cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
-                form->integrals(), form->constants(), form->coefficients(),
-                bcs1, *cuda_x0[i], scale, cuda_b, false
-              );
-            }
+            cuda_context, form->coefficients(), false);
+            std::shared_ptr<dolfinx::la::Vector<T>> x0 = (missing_x0) ? nullptr : cuda_x0[i]; 
+            assembler.lift_bc(
+              cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
+              form->integrals(), form->constants(), form->coefficients(),
+              bcs1, x0, scale, cuda_b, false
+            );
           }
 
           cuda_b.copy_vector_values_to_host(cuda_context);
@@ -1031,7 +1019,7 @@ void declare_cuda_funcs(nb::module_& m)
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
            dolfinx::la::CUDAVector& cuda_b,
            std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs,
-           dolfinx::la::CUDAVector& cuda_x0,
+           std::shared_ptr<dolfinx::la::Vector<T>> cuda_x0,
            float scale,
            dolfinx::fem::FunctionSpace<T>& V)
         {
@@ -1054,12 +1042,8 @@ void declare_cuda_funcs(nb::module_& m)
         {
           if (bcs.size() == 0) return;
           auto cuda_bc0 = dolfinx::fem::CUDADirichletBC<T,U>(cuda_context, V, bcs);
-          // TODO fix this so it doesn't require creation of a dummy x0 vector
-          la::petsc::Vector petsc_x0(*V.dofmap()->index_map,
-                V.dofmap()->index_map_bs());
-          dolfinx::la::CUDAVector default_x0(cuda_context, petsc_x0.vec());
-          assembler.zero_vector_entries(cuda_context, default_x0);
-          assembler.set_bc(cuda_context, cuda_bc0, default_x0, scale, cuda_b);
+          std::shared_ptr<dolfinx::la::Vector<T>> x0 = nullptr;
+          assembler.set_bc(cuda_context, cuda_bc0, x0, scale, cuda_b);
           cuda_b.copy_vector_values_to_host(cuda_context);
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("b"),

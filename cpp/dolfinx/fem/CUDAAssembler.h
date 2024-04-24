@@ -318,7 +318,7 @@ public:
   void set_bc(
     const CUDA::Context& cuda_context,
     const dolfinx::fem::CUDADirichletBC<T,U>& bc,
-    const dolfinx::la::CUDAVector& x0,
+    std::shared_ptr<dolfinx::la::Vector<T>> x0,
     double scale,
     dolfinx::la::CUDAVector& b) const
   {
@@ -363,7 +363,7 @@ public:
     CUdeviceptr dboundary_dofs = bc.dof_indices();
     CUdeviceptr dboundary_value_dofs = bc.dof_value_indices();
     CUdeviceptr dboundary_values = bc.dof_values();
-    CUdeviceptr dx0 = x0.values();
+    CUdeviceptr dx0 = (x0) ? x0->device_values() : NULL;
     std::int32_t num_values =
         b.ghosted() ? b.num_local_ghosted_values() : b.num_local_values();
     CUdeviceptr dvalues = b.values_write();
@@ -398,7 +398,6 @@ public:
     }
 
     b.restore_values_write();
-    x0.restore_values();
   }
   //-----------------------------------------------------------------------------
   /// Modify a right-hand side vector `b` to account for essential
@@ -443,7 +442,7 @@ public:
     const dolfinx::fem::CUDAFormConstants<T>& constants,
     const dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
     const dolfinx::fem::CUDADirichletBC<T,U>& bc1,
-    const dolfinx::la::CUDAVector& x0,
+    std::shared_ptr<dolfinx::la::Vector<T>> x0,
     double scale,
     dolfinx::la::CUDAVector& b,
     bool verbose) const
@@ -507,7 +506,7 @@ public:
   /// @param[in] x0 A device-side vector
   /// @param[in] scale Scaling factor
   /// @param[in,out] b The device-side vector to modify
-  template <dolfinx::scalar T,
+/*  template <dolfinx::scalar T,
           std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void apply_lifting(
     const CUDA::Context& cuda_context,
@@ -528,7 +527,7 @@ public:
               *form_integrals[i], *constants[i], *coefficients[i],
               *bcs1[i], *x0[i], scale, b, verbose);
     }
-  }
+  }*/
   //-----------------------------------------------------------------------------
   /// Assemble bilinear form into a matrix. Matrix must already be
   /// initialised. Does not zero or finalise the matrix.

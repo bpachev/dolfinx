@@ -228,8 +228,8 @@ public:
       // Allocate device-side values
       CUDA::safeMemAlloc(&_dvalues, dvalues_size);
     }
-
-    CUDA::safeMemcpyHtoD(_dvalues, _x.data(), dvalues_size);
+    value_type* values = _x.data();
+    CUDA::safeMemcpyHtoD(_dvalues, values, dvalues_size);
   }
 
   /// Get pointer to vector data on device
