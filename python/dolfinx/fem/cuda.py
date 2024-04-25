@@ -52,7 +52,7 @@ class CUDAAssembler:
   def assemble_matrix(self,
       a: Form,
       mat: typing.Optional[_cpp.fem.CUDAMatrix] = None,
-      bcs: typing.Optional[list[DirichletBC]] = None,
+      bcs: typing.Optional[typing.Union[list[DirichletBC], CUDADirichletBC]] = None,
       diagonal: float = 1.0
   ):
     """Assemble bilinear form into a matrix on the GPU.
@@ -78,10 +78,21 @@ class CUDAAssembler:
     if mat is None:
       mat = self.create_matrix(a)
 
-    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs] 
+    if type(bcs) is list:
+      bc_collection = self.pack_bcs(bcs)
+    elif type(bcs) is CUDADirichletBC:
+      bc_collection = bcs
+    else:
+      raise TypeError(
+        f"Expected either a list of DirichletBC's or a CUDADirichletBC, got '{type(bcs)}'"
+      )
+
+    _bc0 = bc_collection._get_cpp_bcs(a.function_spaces[0])
+    _bc1 = bc_collection._get_cpp_bcs(a.function_spaces[1])
+
     _cpp.fem.assemble_matrix_on_device(
        self._ctx, self._cpp_object, a._cuda_form,
-       a._cuda_mesh, mat._cpp_object, bcs
+       a._cuda_mesh, mat._cpp_object, _bc0, _bc1
     )
 
     return mat
@@ -121,11 +132,21 @@ class CUDAAssembler:
     petsc_vec = create_petsc_cuda_vector(b)
     return CUDAVector(self._ctx, petsc_vec)
 
+  def pack_bcs(self, bcs: list[DirichletBC]) -> CUDADirichletBC:
+    """Pack boundary conditions into a single object for use in assembly.
+
+    The returned object is of type CUDADirichletBC and can be used in place of a list of
+    regular DirichletBCs. This is more efficient when performing multiple operations with the same list of 
+    boundary conditions, or when boundary condition values need to change over time.
+    """
+
+    return CUDADirichletBC(self._ctx, bcs)
+
   def apply_lifting(self,
     b: CUDAVector,
     a: list[Form],
-    bcs: list[list[DirichletBC]],
-    x0: typing.optional[list[Vector]] = None,
+    bcs: typing.List[typing.Union[list[DirichletBC], CUDADirichletBC]],
+    x0: typing.Optional[list[Vector]] = None,
     scale: float = 1.0
   ):
     """GPU equivalent of apply_lifting
@@ -137,55 +158,74 @@ class CUDAAssembler:
        x0: optional list of shift vectors for lifting
        scale: scale of lifting
     """
-  
-    x0 = [] if x0 is None else [x._cpp_object for x in x0]
-    _bcs = [[bc._cpp_object for bc in bc_list] for bc_list in bcs]
+ 
+    if len(a) != len(bcs): raise ValueError("Lengths of forms and bcs must match!")
+    if x0 is not None and len(x0) != len(a): raise ValueError("Lengths of forms and x0 must match!") 
+
+    _x0 = [] if x0 is None else [x._cpp_object for x in x0]
+    bc_collections = []
+    for bc_collection in bcs:
+      if type(bc_collection) is list:
+        bc_collections.append(self.pack_bcs(bc_collection))
+      elif type(bc_collection) is CUDADirichletBC:
+        bc_collections.append(bc_collection)
+      else:
+        raise TypeError(
+          f"Expected either a list of DirichletBC's or a CUDADirichletBC, got '{type(bc_collection)}'"
+        )
+
     cuda_forms = []
     cuda_mesh = None
-    for form in a:
+    _bcs = []
+    for form, bc_collection in zip(a, bc_collections):
       self._copy_form_to_device(form)
       cuda_forms.append(form._cuda_form)
       if cuda_mesh is None: cuda_mesh = form._cuda_mesh
+      _bcs.append(bc_collection._get_cpp_bcs(form.function_spaces[1]))
 
     _cpp.fem.apply_lifting_on_device(
       self._ctx, self._cpp_object,
       cuda_forms, cuda_mesh,
-      b._cpp_object, _bcs, x0, scale
+      b._cpp_object, _bcs, _x0, scale
     )
 
   def set_bc(self,
     b: CUDAVector,
-    bcs: list[DirichletBC],
-    x0: typing.Optional[CUDAVector] = None,
+    bcs: typing.Union[list[DirichletBC], CUDADirichletBC],
+    V: FunctionSpace,
+    x0: typing.Optional[la.Vector] = None,
     scale: float = 1.0,
-    V: FunctionSpace = None
   ):
     """Set boundary conditions on device.
 
     Args:
      b: vector to modify
-     x0: optional 
+     bcs: collection of bcs
+     V: FunctionSpace to which bcs apply
+     x0: optional shift vector
+     scale: scaling factor
     """
 
-    # determine common function space
-    if V is None:
-      _V = bcs[0].function_space
-      if len(bcs) > 1:
-        if not all([_V.contains(bc.function_space) for bc in bcs[1:]]):
-          raise RuntimeWarning(f"Boundary conditions not all the same space! Please pass the parent space as a parameter.")
+    if type(bcs) is list:
+      bc_collection = self.pack_bcs(bcs)
+    elif type(bcs) is CUDADirichletBC:
+      bc_collection = bcs
     else:
-      _V = V._cpp_object
+      raise TypeError(
+        f"Expected either a list of DirichletBC's or a CUDADirichletBC, got '{type(bcs)}'"
+      )
 
-    _bcs = [bc._cpp_object for bc in bcs]
+    _bcs = bc_collection._get_cpp_bcs(V._cpp_object)
+
     if x0 is None:
       _cpp.fem.set_bc_on_device(
         self._ctx, self._cpp_object, 
-        b._cpp_object, _bcs, scale, _V
+        b._cpp_object, _bcs, scale
       )
     else:
       _cpp.fem.set_bc_on_device(
         self._ctx, self._cpp_object,
-        b._cpp_object, _bcs, x0._cpp_object, scale, _V
+        b._cpp_object, _bcs, x0._cpp_object, scale
       )
 
   def _copy_form_to_device(self, form: Form):
@@ -277,8 +317,49 @@ class CUDAMatrix:
     del self._cpp_object
    
 
-class CUDADirichletBCs:
+class CUDADirichletBC:
   """Represents a collection of boundary conditions
   """
 
-  pass
+  def __init__(self, ctx, bcs: typing.List[DirichletBC]):
+    """Initialize a collection of boundary conditions
+    """
+
+    self._bcs = [bc._cpp_object for bc in bcs]
+    self._function_spaces = []
+    self._cpp_bc_objects = []
+    self._ctx = ctx
+
+  def _get_cpp_bcs(self, V: typing.Union[_cpp.fem.FunctionSpace_float32, _cpp.fem.FunctionSpace_float64]):
+    """Create cpp CUDADirichletBC object
+    """
+
+    # Use this to avoid needing hashes (which might not be supported)
+    # Usually there will be a max of two function spaces associated with a set of bcs
+    for i, W in enumerate(self._function_spaces):
+      if W == V:
+        return self._cpp_bc_objects[i]
+
+    if type(V) is _cpp.fem.FunctionSpace_float32:
+      _cpp_bc_obj = _cpp.fem.CUDADirichletBC_float32(self._ctx, V, self._bcs)
+    elif type(V) is _cpp.fem.FunctionSpace_float64:
+      _cpp_bc_obj = _cpp.fem.CUDADirichletBC_float64(self._ctx, V, self._bcs)
+    else:
+      raise TypeError(f"Invalid type for cpp FunctionSpace object '{type(V)}'")
+
+    self._function_spaces.append(V)
+    self._cpp_bc_objects.append(_cpp_bc_obj)
+    return _cpp_bc_obj
+
+  def update(self, bcs: List[DirichletBC]):
+    """Update a subset of the boundary conditions.
+
+    Used for cases with time-varying boundary conditions whose device-side values
+    need to be updated.
+    """
+
+    _bcs_to_update = [bc._cpp_object for bc in bcs]
+    for _cpp_bc, V in zip(self._cpp_bc_objects, self._function_spaces):
+      # filter out anything not contained in the right function space
+      _cpp_bc.update([_bc for _bc in _bcs_to_update if V.contains(_bc.function_space)])
+

@@ -798,7 +798,8 @@ void declare_cuda_templated_objects(nb::module_& m, std::string type)
                new (bc) dolfinx::fem::CUDADirichletBC<T,U>(
                    cuda_context, V, bcs);
              },
-          nb::arg("context"), nb::arg("V"), nb::arg("bcs"));
+          nb::arg("context"), nb::arg("V"), nb::arg("bcs"))
+      .def("update", &dolfinx::fem::CUDADirichletBC<T,U>::update, nb::arg("bcs"));
 
   pyclass_name = std::string("CUDAFormConstants_") + type;
   nb::class_<dolfinx::fem::CUDAFormConstants<T>>(m, pyclass_name.c_str(),
@@ -915,14 +916,13 @@ void declare_cuda_funcs(nb::module_& m)
   m.def("assemble_matrix_on_device",
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
            dolfinx::fem::CUDAForm<T,U>& cuda_form, dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
-           dolfinx::la::CUDAMatrix& cuda_A, std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs) {
+           dolfinx::la::CUDAMatrix& cuda_A, dolfinx::fem::CUDADirichletBC<T,U>& cuda_bc0,
+           dolfinx::fem::CUDADirichletBC<T,U>& cuda_bc1) {
           // Extract constant and coefficient data
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
             cuda_form.dofmap(0);
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap1 =
             cuda_form.dofmap(1);
-          dolfinx::fem::CUDADirichletBC<T,U> cuda_bc0 = cuda_form.bc(cuda_context, 0, bcs);
-          dolfinx::fem::CUDADirichletBC<T,U> cuda_bc1 = cuda_form.bc(cuda_context, 1, bcs);
           // should probably make this its own function and allow for partial copies
           // as some coefficients will remain unchanged
           // However, for now we'll copy each time to ensure correctness 
@@ -948,7 +948,7 @@ void declare_cuda_funcs(nb::module_& m)
  
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"),
-        nb::arg("A"), nb::arg("bcs"), "Assemble matrix on GPU."
+        nb::arg("A"), nb::arg("bcs0"), nb::arg("bcs1"), "Assemble matrix on GPU."
   );
 
   m.def("assemble_vector_on_device",
@@ -982,13 +982,10 @@ void declare_cuda_funcs(nb::module_& m)
            std::vector<std::shared_ptr<dolfinx::fem::CUDAForm<T,U>>>& cuda_form,
            dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
            dolfinx::la::CUDAVector& cuda_b,
-           std::vector<std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>>>& bcs,
+           std::vector<std::shared_ptr<const dolfinx::fem::CUDADirichletBC<T,U>>>& bcs,
            std::vector<std::shared_ptr<dolfinx::la::Vector<T>>>& cuda_x0,
            float scale)
         {
-          // TODO we really should avoid repeated instantiation of CUDA boundary conditions. . . .
-          // probably what's needed is to attach the CUDA object to the Python one. . . .
-          // and then check for updates. . . .
           bool missing_x0 = (cuda_x0.size() == 0);
           if (bcs.size() != cuda_form.size()) throw std::runtime_error("Number of bc lists must match number of forms!");
           if (!missing_x0 && (cuda_x0.size() != cuda_form.size())) 
@@ -996,7 +993,6 @@ void declare_cuda_funcs(nb::module_& m)
 
           for (size_t i = 0; i < cuda_form.size(); i++) {
             auto form = cuda_form[i];
-            auto bcs1 = form->bc(cuda_context, 1, bcs[i]);
             form->coefficients().copy_coefficients_to_device(cuda_context);
             assembler.pack_coefficients(
             cuda_context, form->coefficients(), false);
@@ -1004,7 +1000,7 @@ void declare_cuda_funcs(nb::module_& m)
             assembler.lift_bc(
               cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
               form->integrals(), form->constants(), form->coefficients(),
-              bcs1, x0, scale, cuda_b, false
+              *bcs[i], x0, scale, cuda_b, false
             );
           }
 
@@ -1018,36 +1014,30 @@ void declare_cuda_funcs(nb::module_& m)
   m.def("set_bc_on_device",
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
            dolfinx::la::CUDAVector& cuda_b,
-           std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs,
+           std::shared_ptr<const dolfinx::fem::CUDADirichletBC<T,U>> bc0,
            std::shared_ptr<dolfinx::la::Vector<T>> cuda_x0,
-           float scale,
-           dolfinx::fem::FunctionSpace<T>& V)
+           float scale)
         {
-          if (bcs.size() == 0) return;
-          auto cuda_bc0 = dolfinx::fem::CUDADirichletBC<T,U>(cuda_context, V, bcs);
-          assembler.set_bc(cuda_context, cuda_bc0, cuda_x0, scale, cuda_b);
+          assembler.set_bc(cuda_context, *bc0, cuda_x0, scale, cuda_b);
           cuda_b.copy_vector_values_to_host(cuda_context);
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("b"),
-        nb::arg("bcs"), nb::arg("x0"), nb::arg("scale"), nb::arg("V"),
+        nb::arg("bcs"), nb::arg("x0"), nb::arg("scale"),
         "Set boundary conditions on GPU"
   );
 
   m.def("set_bc_on_device",
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
            dolfinx::la::CUDAVector& cuda_b,
-           std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>> bcs,
-           float scale,
-           dolfinx::fem::FunctionSpace<T>& V)
+           std::shared_ptr<const dolfinx::fem::CUDADirichletBC<T,U>> bc0,
+           float scale)
         {
-          if (bcs.size() == 0) return;
-          auto cuda_bc0 = dolfinx::fem::CUDADirichletBC<T,U>(cuda_context, V, bcs);
           std::shared_ptr<dolfinx::la::Vector<T>> x0 = nullptr;
-          assembler.set_bc(cuda_context, cuda_bc0, x0, scale, cuda_b);
+          assembler.set_bc(cuda_context, *bc0, x0, scale, cuda_b);
           cuda_b.copy_vector_values_to_host(cuda_context);
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("b"),
-        nb::arg("bcs"), nb::arg("scale"), nb::arg("V"),
+        nb::arg("bcs"), nb::arg("scale"),
         "Set boundary conditions on GPU"
   );
  

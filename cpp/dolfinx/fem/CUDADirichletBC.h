@@ -96,7 +96,6 @@ public:
     signed char* dof_markers = nullptr;
     std::vector<std::int32_t> dof_indices(_num_boundary_dofs);
     std::vector<std::int32_t> dof_value_indices(_num_boundary_dofs);
-    std::vector<T> dof_values;
     _num_owned_boundary_dofs = 0;
     _num_boundary_dofs = 0;
     for (auto const& bc : bcs) {
@@ -106,7 +105,7 @@ public:
           for (int i = 0; i < _num_dofs; i++) {
             dof_markers[i] = 0;
           }
-          dof_values.assign(_num_dofs, 0.0);
+          _dof_values.assign(_num_dofs, 0.0);
         }
         
         bc->mark_dofs(std::span(dof_markers, _num_dofs));
@@ -118,7 +117,7 @@ public:
         }
         _num_owned_boundary_dofs += range;
         _num_boundary_dofs += dofs.size();
-        bc->dof_values(dof_values);
+        bc->dof_values(_dof_values);
       }
     }
 
@@ -226,7 +225,7 @@ public:
 
       // Copy dof values to device
       cuda_err = cuMemcpyHtoD(
-        _ddof_values, dof_values.data(), ddof_values_size);
+        _ddof_values, _dof_values.data(), ddof_values_size);
       if (cuda_err != CUDA_SUCCESS) {
         cuMemFree(_ddof_values);
         if (_ddof_value_indices)
@@ -306,6 +305,15 @@ public:
   }
   //-----------------------------------------------------------------------------
 
+  /// Update device-side values for all provided boundary conditions
+  /// The user is responsible for ensuring the provided conditions are in the original list
+  void update(const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T,U>>>& bcs) {
+    for (auto const& bc: bcs) {
+      bc->dof_values(_dof_values);
+    }
+
+    CUDA::safeMemcpyHtoD(_ddof_values, _dof_values.data(), _num_dofs * sizeof(T));
+  }
 
   /// Get the number of degrees of freedom
   int32_t num_dofs() const { return _num_dofs; }
@@ -341,6 +349,10 @@ private:
   /// The number of degrees of freedom that are subject to the
   /// essential boundary conditions, including ghost nodes.
   int32_t _num_boundary_dofs;
+
+  /// A host-side vector with the values for the boundary conditions
+  /// Used for cases when the boundary condition values change
+  std::vector<T> _dof_values;
 
   /// Markers for each degree of freedom, indicating whether or not
   /// they are subject to essential boundary conditions
