@@ -110,19 +110,79 @@ public:
     dolfinx::la::CUDAVector& x) const;
 
 
-
-
   //-----------------------------------------------------------------------------
   /// Pack coefficient values for a form.
   ///
   /// @param[in] cuda_context A context for a CUDA device
   /// @param[in] coefficients Device-side data for form coefficients
   template <dolfinx::scalar T,
-          std::floating_point U = dolfinx::scalar_value_type_t<T>>
+           std::floating_point U = dolfinx::scalar_value_type_t<T>>
+  void pack_coefficients(
+    const CUDA::Context& cuda_context,
+    dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients
+   ) const
+  {
+    std::vector<int> indices;
+    for (int i = 0; i < coefficients.num_coefficients(); i++)
+      indices.push_back(i);
+
+    repack_coefficients(cuda_context, coefficients, indices);
+  }
+
+  //-----------------------------------------------------------------------------
+  /// Pack a subset of coefficient values for a form.
+  /// This function is used as an optimization for cases when only a subset of coefficients
+  /// have changed.
+  ///
+  /// @param[in] cuda_context A context for a CUDA device
+  /// @param[in] coefficients Device-side data for form coefficients
+  /// @param[in] coefficients_to_pack 
+  template <dolfinx::scalar T,
+           std::floating_point U = dolfinx::scalar_value_type_t<T>>
   void pack_coefficients(
     const CUDA::Context& cuda_context,
     dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
-    bool verbose) const
+    std::vector<std::shared_ptr<dolfinx::fem::Function<T,U>>> coefficients_to_pack
+   ) const
+  {
+    if (!coefficients_to_pack.size()) return;
+
+    auto form_coeffs = coefficients.coefficients();
+
+    if (coefficients_to_pack.size() > form_coeffs.size()) {
+      throw std::runtime_error("Too many coefficients to pack!");
+    }
+
+    std::vector<int> indices;
+
+    for (int i = 0; i < coefficients_to_pack.size(); i++) {
+      for (int j = 0; j < form_coeffs.size(); j++) {
+        if (form_coeffs[j] == coefficients_to_pack[i]) {
+          indices.push_back(j);
+          break;
+        }
+      }
+    }
+
+    if (indices.size() != coefficients_to_pack.size()) {
+      throw std::runtime_error("Unable to match all coefficients to existing coefficients in the Form!");
+    }
+
+    repack_coefficients(cuda_context, coefficients, indices);
+  }
+
+  //-----------------------------------------------------------------------------
+  /// (Re-)pack coefficient values for a form.
+  ///
+  /// @param[in] cuda_context A context for a CUDA device
+  /// @param[in] coefficients Device-side data for form coefficients
+  /// @param[in] indices Indices of coefficients to repack
+  template <dolfinx::scalar T,
+          std::floating_point U = dolfinx::scalar_value_type_t<T>>
+  void repack_coefficients(
+    const CUDA::Context& cuda_context,
+    dolfinx::fem::CUDAFormCoefficients<T,U>& coefficients,
+    std::vector<int>& indices) const
   {
     CUresult cuda_err;
     const char * cuda_err_description;
@@ -145,6 +205,9 @@ public:
                 "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
                 " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
         }
+
+        CUdeviceptr dcoefficient_indices = coefficients.coefficient_indices();
+        CUDA::safeMemcpyHtoD(dcoefficient_indices, indices.data(), indices.size() * sizeof(int));
     }
 
     // Fetch the device-side kernel
@@ -185,6 +248,8 @@ public:
     CUdeviceptr coefficient_values_offsets = coefficients.coefficient_values_offsets();
     std::int32_t num_coefficients = coefficients.num_coefficients();
     CUdeviceptr coefficient_values = coefficients.coefficient_values();
+    CUdeviceptr coefficient_indices = coefficients.coefficient_indices();
+    std::int32_t num_indices = indices.size();
     std::int32_t num_cells = coefficients.num_cells();
     std::int32_t num_packed_coefficient_values_per_cell =
       coefficients.num_packed_coefficient_values_per_cell();
@@ -195,6 +260,8 @@ public:
         &dofmaps_dofs_per_cell,
         &coefficient_values_offsets,
         &coefficient_values,
+        &coefficient_indices,
+        &num_indices,
         &num_cells,
         &num_packed_coefficient_values_per_cell,
         &packed_coefficient_values};

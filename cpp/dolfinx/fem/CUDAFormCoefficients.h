@@ -187,6 +187,9 @@ public:
           "cuMemAlloc() failed with " + std::string(cuda_err_description) +
           " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
       }
+
+      size_t coefficient_indices_size = num_coefficients * sizeof(int);
+      CUDA::safeMemAlloc(&_coefficient_indices, coefficient_indices_size);
     }
 
     // Allocate device-side storage for packed coefficient values
@@ -253,6 +256,11 @@ public:
   /// Get device-side pointer to an array of pointers to coefficient
   /// values for each coefficient
   CUdeviceptr coefficient_values() const { return _coefficient_values; }
+
+  /// Get device-side pointer to an array of coefficient indices
+  /// This array is meant to be overwritten with each call to 
+  /// pack_coefficients.
+  CUdeviceptr coefficient_indices() const { return _coefficient_indices; }
 
   /// Get the number of mesh cells that the coefficient applies to
   int32_t num_cells() const { return _num_cells; }
@@ -328,65 +336,6 @@ public:
     }
   }
 
-  //-----------------------------------------------------------------------------
-  /// Update the coefficient values by copying values from host to device
-  void update_coefficient_values() const
-  {
-    CUresult cuda_err;
-    const char * cuda_err_description;
-
-  #if 0
-    // Pack coefficients into an array
-    const std::vector<int>& offsets = _coefficients->offsets();
-    std::vector<const fem::DofMap*> dofmaps(_coefficients->size());
-    for (int i = 0; i < _coefficients->size(); i++)
-      dofmaps[i] = _coefficients->get(i)->function_space()->dofmap().get();
-
-    std::vector<const PetscScalar*> v(_coefficients->size(), nullptr);
-    std::vector<Vec> x(_coefficients->size(), nullptr);
-    std::vector<Vec> x_local(_coefficients->size(), nullptr);
-    for (std::size_t i = 0; i < v.size(); i++) {
-      x[i] = _coefficients->get(i)->vector().vec();
-      VecGhostGetLocalForm(x[i], &x_local[i]);
-      if (x_local[i]) VecGetArrayRead(x_local[i], &v[i]);
-      else VecGetArrayRead(x[i], &v[i]);
-    }
-
-    if (_coefficients->size() > 0) {
-      for (int cell = 0; cell < _num_cells; cell++) {
-        for (std::size_t coeff = 0; coeff < dofmaps.size(); coeff++) {
-          Eigen::Array<std::int32_t, Eigen::Dynamic, 1>::ConstSegmentReturnType dofs =
-            dofmaps[coeff]->cell_dofs(cell);
-          const PetscScalar* _v = v[coeff];
-          for (Eigen::Index k = 0; k < dofs.size(); k++)
-            _host_coefficient_values(cell, k + offsets[coeff]) = _v[dofs[k]];
-        }
-      }
-    }
-
-    for (std::size_t i = 0; i < v.size(); i++) {
-      if (x_local[i]) VecRestoreArrayRead(x_local[i], &v[i]);
-      else VecRestoreArrayRead(x[i], &v[i]);
-      VecGhostRestoreLocalForm(x[i], &x_local[i]);
-    }
-
-    // Copy coefficient values to device
-    if (_num_cells > 0 && _num_packed_coefficient_values_per_cell > 0) {
-      size_t dpacked_coefficient_values_size =
-        _num_cells * _num_packed_coefficient_values_per_cell * sizeof(PetscScalar);
-      cuda_err = cuMemcpyHtoD(
-        _dpacked_coefficient_values, _host_coefficient_values.data(), dpacked_coefficient_values_size);
-      if (cuda_err != CUDA_SUCCESS) {
-        cuMemFree(_dpacked_coefficient_values);
-        cuGetErrorString(cuda_err, &cuda_err_description);
-        throw std::runtime_error(
-          "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
-          " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-      }
-    }
-  #endif
-  }
-
 private:
   /// The underlying coefficients on the host
   std::vector<std::shared_ptr<const Function<T, U>>> _coefficients;
@@ -404,6 +353,9 @@ private:
   /// Get device-side pointer to an array of pointers to coefficient
   /// values for each coefficient
   CUdeviceptr _coefficient_values;
+
+  /// An array for storing coefficient indices for partial packing
+  CUdeviceptr _coefficient_indices;
 
   /// The number of cells that the coefficient applies to
   int32_t _num_cells;

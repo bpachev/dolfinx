@@ -95,6 +95,14 @@ public:
     return CUDADirichletBC<T,U>(cuda_context, *_form->function_spaces()[i], bcs);
   }
 
+  /// Copy the coefficient and constant data to the device
+  /// This can be necessary if either changes on the host
+  void to_device(const CUDA::Context& cuda_context)
+  {
+    _coefficients.copy_coefficients_to_device(cuda_context);
+    _constants.update_constant_values(); 
+  }
+
 private:
 
   CUDAFormCoefficients<T, U> _coefficients;

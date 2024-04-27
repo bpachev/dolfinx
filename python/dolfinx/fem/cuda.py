@@ -36,6 +36,76 @@ def create_petsc_cuda_vector(L: Form) -> PETSc.Vec:
   arr = np.zeros(size[0])
   return PETSc.Vec().createCUDAWithArrays(cpuarray=arr, size=size, bsize=bs, comm=index_map.comm)
 
+def _create_form_on_device(form: Form, ctx: _cpp.fem.CUDAContext):
+  """Create device-side data structures needed to assemble a Form
+  """
+
+  # prevent duplicate initialization of CUDA data
+  if hasattr(form, '_cuda_form'): return
+
+  # now determine the Mesh object corresponding to this form
+  form._cuda_mesh = _create_mesh_on_device(form.mesh, ctx)
+  # functionspaces
+  coeffs = form._cpp_object.coefficients
+  for space in form._cpp_object.function_spaces:
+    _cpp.fem.copy_function_space_to_device(ctx, space)
+  for c in coeffs:
+    _cpp.fem.copy_function_space_to_device(ctx, c.function_space)
+
+  cpp_form = form._cpp_object
+  if type(cpp_form) is _cpp.fem.Form_float32:
+    cuda_form = _cpp.fem.CUDAForm_float32(ctx, cpp_form)
+  elif type(cpp_form) is _cpp.fem.Form_float64:
+    cuda_form = _cpp.fem.CUDAForm_float64(ctx, cpp_form)
+  else:
+    raise ValueError(f"Cannot instantiate CUDAForm for Form of type {type(cpp_form)}!")
+
+  # TODO expose these to the user. . . .
+  cuda_form.compile(ctx, max_threads_per_block=1024, min_blocks_per_multiprocessor=1)
+  form._cuda_form = cuda_form
+
+def _create_mesh_on_device(cpp_mesh: typing.Union[_cpp.mesh.Mesh_float32, _cpp.mesh.Mesh_float64], ctx: _cpp.fem.CUDAContext):
+  """Create device-side mesh data
+  """
+
+  if type(cpp_mesh) is _cpp.mesh.Mesh_float32:
+    return _cpp.fem.CUDAMesh_float32(ctx, cpp_mesh)
+  elif type(cpp_mesh) is _cpp.mesh.Mesh_float64:
+    return _cpp.fem.CUDAMesh_float64(ctx, cpp_mesh)
+  else:
+    raise ValueError(f"Cannot instantiate CUDAMesh for Mesh of type {type(cpp_mesh)}!")
+
+
+
+@functools.singledispatch
+def to_device(obj: typing.Any, ctx: _cpp.fem.CUDAContext):
+  """Copy an object to the device
+  """
+
+  return _to_device(obj, ctx)
+
+@to_device.register(Form)
+def _to_device(a: Form, ctx: _cpp.fem.CUDAContext):
+  """Copy a Form's coefficients to the device
+  """
+
+  _create_form_on_device(a, ctx)
+  a._cuda_form.to_device(ctx)
+
+@to_device.register(Function)
+def _to_device(f: Function, ctx: _cpp.femCUDAContext):
+  """Copy a Function to the device
+  """
+
+  f._cpp_object.x.to_device(ctx)
+
+@to_device.register(la.Vector)
+def _to_device(v: la.Vector, ctx: _cpp.femCUDAContext):
+  """Copy a Vector to the device
+  """
+
+  v._cpp_object.to_device(ctx)
+
 class CUDAAssembler:
   """Class for assembly on the GPU
   """
@@ -53,18 +123,23 @@ class CUDAAssembler:
       a: Form,
       mat: typing.Optional[_cpp.fem.CUDAMatrix] = None,
       bcs: typing.Optional[typing.Union[list[DirichletBC], CUDADirichletBC]] = None,
-      diagonal: float = 1.0
+      diagonal: float = 1.0,
+      constants: typing.Optional[list] = None,
+      coeffs: typing.Optional[list] = None
   ):
     """Assemble bilinear form into a matrix on the GPU.
 
     Args:
         a: The bilinear form assemble.
+        mat: Matrix in which to store assembled values.
         bcs: Boundary conditions that affect the assembled matrix.
             Degrees-of-freedom constrained by a boundary condition will
             have their rows/columns zeroed and the value ``diagonal``
             set on on the matrix diagonal.
         constants: Constants that appear in the form. If not provided,
             any required coefficients will be computed.
+        coeffs: Optional list of form coefficients to repack. If not specified, all will be repacked.
+           If an empty list is passed, no repacking will be performed.
 
     Returns:
         Matrix representation of the bilinear form ``a``.
@@ -74,7 +149,9 @@ class CUDAAssembler:
         accumulated.
 
     """
-    self._copy_form_to_device(a)
+
+    self._check_form(a)
+
     if mat is None:
       mat = self.create_matrix(a)
 
@@ -89,6 +166,8 @@ class CUDAAssembler:
 
     _bc0 = bc_collection._get_cpp_bcs(a.function_spaces[0])
     _bc1 = bc_collection._get_cpp_bcs(a.function_spaces[1])
+
+    self.pack_coefficients(a, coeffs)
 
     _cpp.fem.assemble_matrix_on_device(
        self._ctx, self._cpp_object, a._cuda_form,
@@ -108,13 +187,15 @@ class CUDAAssembler:
         b: the linear form to use for assembly
         vec: the vector to assemble into. Created if it doesn't exist
         constants: Form constants
-        coeffs: Form coefficients
+        coeffs: Optional list of form coefficients to repack. If not specified, all will be repacked.
+           If an empty list is passed, no repacking will be performed.
     """
 
-    self._copy_form_to_device(b)
+    self._check_form(b)
     if vec is None:
       vec = self.create_vector(b)
-    
+   
+    self.pack_coefficients(b, coeffs) 
     _cpp.fem.assemble_vector_on_device(self._ctx, self._cpp_object, b._cuda_form,
       b._cuda_mesh, vec._cpp_object)
     return vec
@@ -142,12 +223,25 @@ class CUDAAssembler:
 
     return CUDADirichletBC(self._ctx, bcs)
 
+  def pack_coefficients(self, a: Form, coefficients: typing.Optional[list[Function]]=None):
+    """Pack coefficients on device
+    """
+  
+    self._check_form(a)
+    if coefficients is None:
+      _cpp.fem.pack_coefficients(self._ctx, self._cpp_object, a._cuda_form)
+    else:
+      # perform a repacking with only the indicated coefficients
+      _coefficients = [c._cpp_object for c in coefficients]
+      _cpp.fem.pack_coefficients(self._ctx, self._cpp_object, a._cuda_form, _coefficients)
+
   def apply_lifting(self,
     b: CUDAVector,
     a: list[Form],
     bcs: typing.List[typing.Union[list[DirichletBC], CUDADirichletBC]],
     x0: typing.Optional[list[Vector]] = None,
-    scale: float = 1.0
+    scale: float = 1.0,
+    coeffs: typing.Optional[list[list[Function]]] = None
   ):
     """GPU equivalent of apply_lifting
 
@@ -157,6 +251,7 @@ class CUDAAssembler:
        bcs: list of boundary condition lists
        x0: optional list of shift vectors for lifting
        scale: scale of lifting
+       coeffs: coefficients to (re-)pack
     """
  
     if len(a) != len(bcs): raise ValueError("Lengths of forms and bcs must match!")
@@ -174,11 +269,17 @@ class CUDAAssembler:
           f"Expected either a list of DirichletBC's or a CUDADirichletBC, got '{type(bc_collection)}'"
         )
 
+    if coeffs is None:
+      coeffs = [None] * len(a)
+    elif not len(coeffs):
+      coeffs = [[] for form in a]
+    
     cuda_forms = []
     cuda_mesh = None
     _bcs = []
-    for form, bc_collection in zip(a, bc_collections):
-      self._copy_form_to_device(form)
+    for form, bc_collection, form_coeffs in zip(a, bc_collections, coeffs):
+      self._check_form(form)
+      self.pack_coefficients(form, form_coeffs)
       cuda_forms.append(form._cuda_form)
       if cuda_mesh is None: cuda_mesh = form._cuda_mesh
       _bcs.append(bc_collection._get_cpp_bcs(form.function_spaces[1]))
@@ -228,45 +329,18 @@ class CUDAAssembler:
         b._cpp_object, _bcs, x0._cpp_object, scale
       )
 
-  def _copy_form_to_device(self, form: Form):
-    """Copy all needed assembly data structures to the device.
-    """
-    
-    # prevent duplicate initialization of CUDA data
-    if hasattr(form, '_cuda_form'): return
-
-    # now determine the Mesh object corresponding to this form
-    form._cuda_mesh = self._copy_mesh_to_device(form.mesh)
-    # functionspaces
-    coeffs = form._cpp_object.coefficients
-    for space in form._cpp_object.function_spaces:
-      _cpp.fem.copy_function_space_to_device(self._ctx, space)
-    for c in coeffs:
-      _cpp.fem.copy_function_space_to_device(self._ctx, c.function_space)
-
-    cpp_form = form._cpp_object
-    if type(cpp_form) is _cpp.fem.Form_float32:
-      cuda_form = _cpp.fem.CUDAForm_float32(self._ctx, cpp_form)
-    elif type(cpp_form) is _cpp.fem.Form_float64:
-      cuda_form = _cpp.fem.CUDAForm_float64(self._ctx, cpp_form)
-    else:
-      raise ValueError(f"Cannot instantiate CUDAForm for Form of type {type(cpp_form)}!")
-
-    # TODO expose these to the user. . . .
-    cuda_form.compile(self._ctx, max_threads_per_block=1024, min_blocks_per_multiprocessor=1)
-    form._cuda_form = cuda_form
-
-  def _copy_mesh_to_device(self, cpp_mesh: typing.Union[_cpp.mesh.Mesh_float32, _cpp.mesh.Mesh_float64]):
-    """Copy mesh to device.
+  def to_device(self, obj: typing.Any):
+    """Copy an object needed for assembly to the device
     """
 
-    if type(cpp_mesh) is _cpp.mesh.Mesh_float32:
-      return _cpp.fem.CUDAMesh_float32(self._ctx, cpp_mesh)
-    elif type(cpp_mesh) is _cpp.mesh.Mesh_float64:
-      return _cpp.fem.CUDAMesh_float64(self._ctx, cpp_mesh)
-    else:
-      raise ValueError(f"Cannot instantiate CUDAMesh for Mesh of type {type(cpp_mesh)}!")
+    to_device(obj, self._ctx)
 
+  def _check_form(self, a: Form):
+    """Check the provided Form to ensure it has been created on the device
+    """
+
+    if not hasattr(a, '_cuda_form'):
+      raise ValueError("Please copy the form to the device by calling 'to_device' on the form before attempting assembly!")
     
 class CUDAVector:
   """Vector on device
@@ -277,6 +351,7 @@ class CUDAVector:
     """
 
     self._petsc_vec = vec
+    self._ctx = ctx
     self._cpp_object = _cpp.fem.CUDAVector(ctx, self._petsc_vec)
 
   def vector(self):
@@ -284,6 +359,12 @@ class CUDAVector:
     """
 
     return self._petsc_vec
+
+  def to_host(self):
+    """Copy device-side values to host
+    """
+
+    self._cpp_object.to_host(self._ctx)
 
   def __del__(self):
     """Delete the vector and free up GPU resources

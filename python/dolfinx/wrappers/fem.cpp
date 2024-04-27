@@ -759,7 +759,8 @@ void declare_cuda_templated_objects(nb::module_& m, std::string type)
                cf.compile(cuda_context, max_threads_per_block,
                           min_blocks_per_multiprocessor, dolfinx::fem::assembly_kernel_type::ASSEMBLY_KERNEL_GLOBAL);
              }, nb::arg("context"), nb::arg("max_threads_per_block"), nb::arg("min_blocks_per_multiprocessor"))
-      .def_prop_ro("compiled", &dolfinx::fem::CUDAForm<T,U>::compiled);
+      .def_prop_ro("compiled", &dolfinx::fem::CUDAForm<T,U>::compiled)
+      .def("to_device", &dolfinx::fem::CUDAForm<T,U>::to_device);
 
   std::string pyclass_name = std::string("CUDAFormIntegral_") + type;
   nb::class_<dolfinx::fem::CUDAFormIntegral<T,U>>(m, pyclass_name.c_str(),
@@ -866,6 +867,7 @@ void declare_cuda_objects(nb::module_& m)
           [](dolfinx::la::CUDAVector* cuvec, const dolfinx::CUDA::Context& cuda_context, Vec x) {
             new (cuvec) dolfinx::la::CUDAVector(cuda_context, x, false, false);
           }, nb::arg("context"), nb::arg("x"))
+      .def("to_host", &dolfinx::la::CUDAVector::copy_vector_values_to_host)
       .def_prop_ro("vector",
           [](dolfinx::la::CUDAVector& cuvec) {
             Vec b = cuvec.vector();
@@ -913,6 +915,28 @@ void declare_cuda_funcs(nb::module_& m)
         },
         nb::arg("context"), nb::arg("V"), "Copy function space dofmap to GPU");
 
+  m.def("pack_coefficients",
+        [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+          dolfinx::fem::CUDAForm<T,U>& cuda_form)
+        {
+          assembler.pack_coefficients(cuda_context, cuda_form.coefficients());
+        },
+        nb::arg("context"), nb::arg("assembler"), nb::arg("cuda_form"), "Pack form coefficients on device.");
+
+  m.def("pack_coefficients",
+       [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
+          dolfinx::fem::CUDAForm<T,U>& cuda_form, std::vector<std::shared_ptr<dolfinx::fem::Function<T,U>>>& coefficients)
+       {
+         if (!coefficients.size()) {
+           // nothing to do
+           return;
+         }
+
+         assembler.pack_coefficients(cuda_context, cuda_form.coefficients(), coefficients);
+       },
+       nb::arg("context"), nb::arg("assembler"), nb::arg("cuda_form"), nb::arg("coefficients"),
+       "Pack a given subset of form coefficients on device");
+
   m.def("assemble_matrix_on_device",
         [](const dolfinx::CUDA::Context& cuda_context, dolfinx::fem::CUDAAssembler& assembler,
            dolfinx::fem::CUDAForm<T,U>& cuda_form, dolfinx::mesh::CUDAMesh<U>& cuda_mesh,
@@ -923,12 +947,6 @@ void declare_cuda_funcs(nb::module_& m)
             cuda_form.dofmap(0);
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap1 =
             cuda_form.dofmap(1);
-          // should probably make this its own function and allow for partial copies
-          // as some coefficients will remain unchanged
-          // However, for now we'll copy each time to ensure correctness 
-          cuda_form.coefficients().copy_coefficients_to_device(cuda_context);
-          assembler.pack_coefficients(
-            cuda_context, cuda_form.coefficients(), false);
 
           // not needed for global assembly kernel
           /*assembler.compute_lookup_tables(
@@ -960,17 +978,12 @@ void declare_cuda_funcs(nb::module_& m)
           
           std::shared_ptr<const dolfinx::fem::CUDADofMap> cuda_dofmap0 =
             cuda_form.dofmap(0);
-          // we'll almost always need to call this if coefficient values change
-          cuda_form.coefficients().copy_coefficients_to_device(cuda_context); 
-          assembler.pack_coefficients(
-            cuda_context, cuda_form.coefficients(), false);
           
           assembler.zero_vector_entries(cuda_context, cuda_b);
           assembler.assemble_vector(
              cuda_context, cuda_mesh, *cuda_dofmap0,
              cuda_form.integrals(), cuda_form.constants(),
              cuda_form.coefficients(), cuda_b, false);
-          cuda_b.copy_vector_values_to_host(cuda_context);
           
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"), nb::arg("b"),
@@ -993,9 +1006,6 @@ void declare_cuda_funcs(nb::module_& m)
 
           for (size_t i = 0; i < cuda_form.size(); i++) {
             auto form = cuda_form[i];
-            form->coefficients().copy_coefficients_to_device(cuda_context);
-            assembler.pack_coefficients(
-            cuda_context, form->coefficients(), false);
             std::shared_ptr<dolfinx::la::Vector<T>> x0 = (missing_x0) ? nullptr : cuda_x0[i]; 
             assembler.lift_bc(
               cuda_context, cuda_mesh, *form->dofmap(0), *form->dofmap(1),
@@ -1004,7 +1014,6 @@ void declare_cuda_funcs(nb::module_& m)
             );
           }
 
-          cuda_b.copy_vector_values_to_host(cuda_context);
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"), nb::arg("b"),
         nb::arg("bcs"), nb::arg("x0"), nb::arg("scale"),
@@ -1019,7 +1028,6 @@ void declare_cuda_funcs(nb::module_& m)
            float scale)
         {
           assembler.set_bc(cuda_context, *bc0, cuda_x0, scale, cuda_b);
-          cuda_b.copy_vector_values_to_host(cuda_context);
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("b"),
         nb::arg("bcs"), nb::arg("x0"), nb::arg("scale"),
@@ -1034,7 +1042,6 @@ void declare_cuda_funcs(nb::module_& m)
         {
           std::shared_ptr<dolfinx::la::Vector<T>> x0 = nullptr;
           assembler.set_bc(cuda_context, *bc0, x0, scale, cuda_b);
-          cuda_b.copy_vector_values_to_host(cuda_context);
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("b"),
         nb::arg("bcs"), nb::arg("scale"),
