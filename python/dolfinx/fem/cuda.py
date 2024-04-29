@@ -382,6 +382,7 @@ class CUDAMatrix:
     """
 
     self._petsc_mat = petsc_mat
+    self._ctx = ctx
     self._cpp_object = _cpp.fem.CUDAMatrix(ctx, petsc_mat)
 
   def mat(self):
@@ -389,6 +390,12 @@ class CUDAMatrix:
     """
 
     return self._petsc_mat
+
+  def to_host(self):
+    """Copy device-side values to host
+    """
+
+    self._cpp_object.to_host(self._ctx)
 
   def __del__(self):
     """Delete the matrix and free up GPU resources

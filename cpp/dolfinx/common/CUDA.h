@@ -147,6 +147,8 @@ void safeMemAlloc(CUdeviceptr* dptr, size_t bytesize);
 void safeMemcpyDtoH(void* dstHost, CUdeviceptr srcDevice, size_t ByteCount);
 void safeMemcpyHtoD(CUdeviceptr dstDevice, void* srcHost, size_t ByteCount);
 void safeDeviceGetAttribute(int * res, CUdevice_attribute attr, CUdevice dev);
+void safeCtxSynchronize();
+void safeStreamCreate(CUstream* streamptr, unsigned int flags);
 CUjit_target get_cujit_target(const Context& cuda_context);
 
 #endif

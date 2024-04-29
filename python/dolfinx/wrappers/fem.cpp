@@ -853,6 +853,12 @@ void declare_cuda_objects(nb::module_& m)
             new (cumat) dolfinx::la::CUDAMatrix(cuda_context, A, false, false);
           }, nb::arg("context"), nb::arg("A"))
       .def("debug_dump", &dolfinx::la::CUDAMatrix::debug_dump)
+      .def("to_host",
+          [](dolfinx::la::CUDAMatrix& cumat, const dolfinx::CUDA::Context& cuda_context)
+          {
+            //cumat.copy_matrix_values_to_host(cuda_context);
+            cumat.apply(MAT_FINAL_ASSEMBLY);
+          }, nb::arg("cuda_context"), "Copy matrix values to host and finalize assembly.")
       .def_prop_ro("mat",
           [](dolfinx::la::CUDAMatrix& cumat) {
             Mat A = cumat.mat();
@@ -962,7 +968,7 @@ void declare_cuda_funcs(nb::module_& m)
           // TODO determine if this copy is actually needed. . .
           // This unfortunately may be the case with PETSc matrices
           cuda_A.copy_matrix_values_to_host(cuda_context);
-          cuda_A.apply(MAT_FINAL_ASSEMBLY);
+          //cuda_A.apply(MAT_FINAL_ASSEMBLY);
  
         },
         nb::arg("context"), nb::arg("assembler"), nb::arg("form"), nb::arg("mesh"),

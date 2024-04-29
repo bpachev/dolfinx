@@ -488,6 +488,30 @@ void CUDA::safeDeviceGetAttribute(int * res, CUdevice_attribute attrib, CUdevice
   }
 }
 
+void CUDA::safeCtxSynchronize()
+{
+  const char * cuda_err_description;
+  CUresult cuda_err = cuCtxSynchronize();
+  if (cuda_err != CUDA_SUCCESS) {
+    cuGetErrorString(cuda_err, &cuda_err_description);
+    throw std::runtime_error(
+      "cuCtxSynchronize() failed with " + std::string(cuda_err_description) +
+      " at " + __FILE__ + ":" + std::to_string(__LINE__));
+  }
+}
+
+void CUDA::safeStreamCreate(CUstream* streamptr, unsigned int flags)
+{
+  const char * cuda_err_description;
+  CUresult cuda_err = cuStreamCreate(streamptr, flags);
+  if (cuda_err != CUDA_SUCCESS) {
+    cuGetErrorString(cuda_err, &cuda_err_description);
+    throw std::runtime_error(
+      "cuCtxSynchronize() failed with " + std::string(cuda_err_description) +
+      " at " + __FILE__ + ":" + std::to_string(__LINE__));
+  }
+}
+
 CUjit_target CUDA::get_cujit_target(const CUDA::Context& cuda_context)
 {
   int compute_major, compute_minor;
