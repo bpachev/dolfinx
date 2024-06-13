@@ -1,10 +1,10 @@
-// # Interpolation different meshes (C++)
-//
+// ```text
 // Copyright (C) 2022 Igor A. Baratta and Massimiliano Leoni
-//
 // This file is part of DOLFINx (https://www.fenicsproject.org)
-//
 // SPDX-License-Identifier:    LGPL-3.0-or-later
+// ```
+
+// # Interpolation different meshes
 
 #include <basix/e-lagrange.h>
 #include <dolfinx/fem/dolfinx_fem.h>
@@ -13,7 +13,6 @@
 #include <memory>
 
 using namespace dolfinx;
-
 using T = double;
 
 int main(int argc, char* argv[])
@@ -21,7 +20,7 @@ int main(int argc, char* argv[])
   init_logging(argc, argv);
   MPI_Init(&argc, &argv);
   {
-    MPI_Comm comm{MPI_COMM_WORLD};
+    MPI_Comm comm = MPI_COMM_WORLD;
 
     // Create a tetrahedral mesh
     auto mesh_tet = std::make_shared<mesh::Mesh<double>>(
@@ -75,7 +74,8 @@ int main(int argc, char* argv[])
             *u_hex->function_space()->mesh(),
             *u_hex->function_space()->element(),
             *u_tet->function_space()->mesh(), padding);
-    u_hex->interpolate(*u_tet, nmm_interpolation_data);
+    constexpr std::span<const std::int32_t> cell_map;
+    u_hex->interpolate(*u_tet, cell_map, nmm_interpolation_data);
 
 #ifdef HAS_ADIOS2
     io::VTXWriter<double> write_tet(mesh_tet->comm(), "u_tet.bp", {u_tet});

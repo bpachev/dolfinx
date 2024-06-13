@@ -61,9 +61,9 @@ def run_scalar_test(mesh, V, degree):
 
     # Get quadrature degree for bilinear form integrand (ignores effect of non-affine map)
     a = inner(grad(u), grad(v)) * dx(metadata={"quadrature_degree": -1})
-    a.integrals()[0].metadata()[
-        "quadrature_degree"
-    ] = ufl.algorithms.estimate_total_polynomial_degree(a)
+    a.integrals()[0].metadata()["quadrature_degree"] = (
+        ufl.algorithms.estimate_total_polynomial_degree(a)
+    )
     a = form(a)
 
     # Source term
@@ -73,9 +73,9 @@ def run_scalar_test(mesh, V, degree):
 
     # Set quadrature degree for linear form integrand (ignores effect of non-affine map)
     L = inner(f, v) * dx(metadata={"quadrature_degree": -1})
-    L.integrals()[0].metadata()[
-        "quadrature_degree"
-    ] = ufl.algorithms.estimate_total_polynomial_degree(L)
+    L.integrals()[0].metadata()["quadrature_degree"] = (
+        ufl.algorithms.estimate_total_polynomial_degree(L)
+    )
     L = form(L)
 
     u_bc = Function(V)
@@ -103,7 +103,7 @@ def run_scalar_test(mesh, V, degree):
     solver.setOperators(A)
 
     uh = Function(V)
-    solver.solve(b, uh.vector)
+    solver.solve(b, uh.x.petsc_vec)
     uh.x.scatter_forward()
 
     M = (u_exact - uh) ** 2 * dx
@@ -140,7 +140,7 @@ def run_vector_test(mesh, V, degree):
 
     # Solve
     uh = Function(V)
-    solver.solve(b, uh.vector)
+    solver.solve(b, uh.x.petsc_vec)
     uh.x.scatter_forward()
 
     # Calculate error
@@ -225,7 +225,7 @@ def run_dg_test(mesh, V, degree):
 
     # Solve
     uh = Function(V)
-    solver.solve(b, uh.vector)
+    solver.solve(b, uh.x.petsc_vec)
     uh.x.scatter_forward()
 
     # Calculate error
@@ -406,7 +406,7 @@ def test_biharmonic(family):
     solver.setOperators(A)
 
     x_h = Function(V)
-    solver.solve(b, x_h.vector)
+    solver.solve(b, x_h.x.petsc_vec)
     x_h.x.scatter_forward()
 
     # Recall that x_h has flattened indices

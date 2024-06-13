@@ -164,6 +164,17 @@ void declare_mesh(nb::module_& m, std::string type)
                 dofs.data_handle(), {dofs.extent(0), dofs.extent(1)});
           },
           nb::rv_policy::reference_internal)
+      .def(
+          "dofmaps",
+          [](dolfinx::mesh::Geometry<T>& self, int i)
+          {
+            auto dofs = self.dofmap(i);
+            return nb::ndarray<const std::int32_t, nb::numpy>(
+                dofs.data_handle(), {dofs.extent(0), dofs.extent(1)});
+          },
+          nb::rv_policy::reference_internal, nb::arg("i"),
+          "Get the geometry dofmap associated with coordinate element i (mixed "
+          "topology)")
       .def("index_map", &dolfinx::mesh::Geometry<T>::index_map)
       .def_prop_ro(
           "x",
@@ -207,10 +218,8 @@ void declare_mesh(nb::module_& m, std::string type)
                    nb::overload_cast<>(&dolfinx::mesh::Mesh<T>::topology),
                    "Mesh topology")
       .def_prop_ro(
-          "comm",
-          [](dolfinx::mesh::Mesh<T>& self)
-          { return MPICommWrapper(self.comm()); },
-          nb::keep_alive<0, 1>())
+          "comm", [](dolfinx::mesh::Mesh<T>& self)
+          { return MPICommWrapper(self.comm()); }, nb::keep_alive<0, 1>())
       .def_rw("name", &dolfinx::mesh::Mesh<T>::name);
 
   std::string create_interval("create_interval_" + type);
@@ -290,8 +299,13 @@ void declare_mesh(nb::module_& m, std::string type)
       [](const dolfinx::mesh::Mesh<T>& mesh, int dim,
          nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig> entities)
       {
-        return dolfinx::mesh::create_submesh(
+        auto submesh = dolfinx::mesh::create_submesh(
             mesh, dim, std::span(entities.data(), entities.size()));
+        auto _e_map = as_nbarray(std::move(std::get<1>(submesh)));
+        auto _v_map = as_nbarray(std::move(std::get<2>(submesh)));
+        auto _g_map = as_nbarray(std::move(std::get<3>(submesh)));
+        return std::tuple(std::move(std::get<0>(submesh)), _e_map, _v_map,
+                          _g_map);
       },
       nb::arg("mesh"), nb::arg("dim"), nb::arg("entities"));
 
@@ -384,6 +398,20 @@ void declare_mesh(nb::module_& m, std::string type)
         return as_nbarray(std::move(idx), {entities.size(), num_vertices});
       },
       nb::arg("mesh"), nb::arg("dim"), nb::arg("entities"), nb::arg("orient"));
+
+  m.def("create_geometry",
+        [](const dolfinx::mesh::Topology& topology,
+           const std::vector<dolfinx::fem::CoordinateElement<T>>& elements,
+           nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> nodes,
+           nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> xdofs,
+           nb::ndarray<const T, nb::ndim<1>, nb::c_contig> x, int dim)
+        {
+          return dolfinx::mesh::create_geometry(
+              topology, elements,
+              std::span<const std::int64_t>(nodes.data(), nodes.size()),
+              std::span<const std::int64_t>(xdofs.data(), xdofs.size()),
+              std::span<const T>(x.data(), x.size()), dim);
+        });
 }
 
 void mesh(nb::module_& m)
@@ -537,10 +565,8 @@ void mesh(nb::module_& m)
            nb::overload_cast<std::int8_t>(
                &dolfinx::mesh::Topology::interprocess_facets, nb::const_))
       .def_prop_ro(
-          "comm",
-          [](dolfinx::mesh::Topology& self)
-          { return MPICommWrapper(self.comm()); },
-          nb::keep_alive<0, 1>());
+          "comm", [](dolfinx::mesh::Topology& self)
+          { return MPICommWrapper(self.comm()); }, nb::keep_alive<0, 1>());
 
   m.def("create_topology",
         [](MPICommWrapper comm,

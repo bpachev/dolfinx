@@ -153,68 +153,131 @@ void declare_function_space(nb::module_& m, std::string type)
         .def_prop_ro("space_dimension",
                      &dolfinx::fem::FiniteElement<T>::space_dimension)
         .def(
-            "pre_apply_dof_transformation",
+            "T_apply",
             [](const dolfinx::fem::FiniteElement<T>& self,
                nb::ndarray<T, nb::ndim<1>, nb::c_contig> x,
-               std::uint32_t cell_permutation, int dim)
+               nb::ndarray<const std::uint32_t, nb::ndim<1>, nb::c_contig>
+                   cell_permutations,
+               int dim)
             {
-              self.pre_apply_dof_transformation(std::span(x.data(), x.size()),
-                                                cell_permutation, dim);
+              const std::size_t data_per_cell
+                  = x.size() / cell_permutations.size();
+              std::span<T> x_span(x.data(), x.size());
+              std::span<const std::uint32_t> perm_span(
+                  cell_permutations.data(), cell_permutations.size());
+              for (std::size_t i = 0; i < cell_permutations.size(); i++)
+              {
+                self.T_apply(x_span.subspan(i * data_per_cell, data_per_cell),
+                             perm_span[i], dim);
+              }
             },
-            nb::arg("x"), nb::arg("cell_permutation"), nb::arg("dim"))
+            nb::arg("x"), nb::arg("cell_permutations"), nb::arg("dim"))
         .def(
-            "pre_apply_transpose_dof_transformation",
+            "Tt_apply",
             [](const dolfinx::fem::FiniteElement<T>& self,
                nb::ndarray<T, nb::ndim<1>, nb::c_contig> x,
-               std::uint32_t cell_permutation, int dim)
+               nb::ndarray<const std::uint32_t, nb::ndim<1>, nb::c_contig>
+                   cell_permutations,
+               int dim)
             {
-              self.pre_apply_transpose_dof_transformation(
-                  std::span(x.data(), x.size()), cell_permutation, dim);
+              const std::size_t data_per_cell
+                  = x.size() / cell_permutations.size();
+              std::span<T> x_span(x.data(), x.size());
+              std::span<const std::uint32_t> perm_span(
+                  cell_permutations.data(), cell_permutations.size());
+              for (std::size_t i = 0; i < cell_permutations.size(); i++)
+              {
+                self.Tt_apply(x_span.subspan(i * data_per_cell, data_per_cell),
+                              perm_span[i], dim);
+              }
             },
-            nb::arg("x"), nb::arg("cell_permutation"), nb::arg("dim"))
+            nb::arg("x"), nb::arg("cell_permutations"), nb::arg("dim"))
         .def(
-            "pre_apply_inverse_transpose_dof_transformation",
+            "Tt_inv_apply",
             [](const dolfinx::fem::FiniteElement<T>& self,
                nb::ndarray<T, nb::ndim<1>, nb::c_contig> x,
-               std::uint32_t cell_permutation, int dim)
+               nb::ndarray<const std::uint32_t, nb::ndim<1>, nb::c_contig>
+                   cell_permutations,
+               int dim)
             {
-              self.pre_apply_inverse_transpose_dof_transformation(
-                  std::span(x.data(), x.size()), cell_permutation, dim);
+              const std::size_t data_per_cell
+                  = x.size() / cell_permutations.size();
+              std::span<T> x_span(x.data(), x.size());
+              std::span<const std::uint32_t> perm_span(
+                  cell_permutations.data(), cell_permutations.size());
+
+              for (std::size_t i = 0; i < cell_permutations.size(); i++)
+              {
+                self.Tt_inv_apply(
+                    x_span.subspan(i * data_per_cell, data_per_cell),
+                    perm_span[i], dim);
+              }
             },
-            nb::arg("x"), nb::arg("cell_permutation"), nb::arg("dim"))
+            nb::arg("x"), nb::arg("cell_permutations"), nb::arg("dim"))
         .def(
-            "pre_apply_dof_transformation",
+            "T_apply",
             [](const dolfinx::fem::FiniteElement<T>& self,
                nb::ndarray<std::complex<T>, nb::ndim<1>, nb::c_contig> x,
-               std::uint32_t cell_permutation, int dim)
+               nb::ndarray<const std::uint32_t, nb::ndim<1>, nb::c_contig>
+                   cell_permutations,
+               int dim)
             {
-              self.pre_apply_dof_transformation(
-                  std::span((std::complex<T>*)x.data(), x.size()),
-                  cell_permutation, dim);
+              const std::size_t data_per_cell
+                  = x.size() / cell_permutations.size();
+              std::span<std::complex<T>> x_span(x.data(), x.size());
+              std::span<const std::uint32_t> perm_span(
+                  cell_permutations.data(), cell_permutations.size());
+
+              for (std::size_t i = 0; i < cell_permutations.size(); i++)
+              {
+                self.T_apply(x_span.subspan(i * data_per_cell, data_per_cell),
+                             perm_span[i], dim);
+              }
             },
-            nb::arg("x"), nb::arg("cell_permutation"), nb::arg("dim"))
+            nb::arg("x"), nb::arg("cell_permutations"), nb::arg("dim"))
         .def(
-            "pre_apply_transpose_dof_transformation",
+            "Tt_apply",
             [](const dolfinx::fem::FiniteElement<T>& self,
                nb::ndarray<std::complex<T>, nb::ndim<1>, nb::c_contig> x,
-               std::uint32_t cell_permutation, int dim)
+               nb::ndarray<const std::uint32_t, nb::ndim<1>, nb::c_contig>
+                   cell_permutations,
+               int dim)
             {
-              self.pre_apply_transpose_dof_transformation(
-                  std::span((std::complex<T>*)x.data(), x.size()),
-                  cell_permutation, dim);
+              const std::size_t data_per_cell
+                  = x.size() / cell_permutations.size();
+              std::span<std::complex<T>> x_span(x.data(), x.size());
+              std::span<const std::uint32_t> perm_span(
+                  cell_permutations.data(), cell_permutations.size());
+
+              for (std::size_t i = 0; i < cell_permutations.size(); i++)
+              {
+                self.Tt_apply(x_span.subspan(i * data_per_cell, data_per_cell),
+                              perm_span[i], dim);
+              }
             },
-            nb::arg("x"), nb::arg("cell_permutation"), nb::arg("dim"))
+            nb::arg("x"), nb::arg("cell_permutations"), nb::arg("dim"))
         .def(
-            "pre_apply_inverse_transpose_dof_transformation",
+            "Tt_inv_apply",
             [](const dolfinx::fem::FiniteElement<T>& self,
                nb::ndarray<std::complex<T>, nb::ndim<1>, nb::c_contig> x,
-               std::uint32_t cell_permutation, int dim)
+               nb::ndarray<const std::uint32_t, nb::ndim<1>, nb::c_contig>
+                   cell_permutations,
+               int dim)
             {
-              self.pre_apply_inverse_transpose_dof_transformation(
-                  std::span(x.data(), x.shape(0) * x.shape(1)),
-                  cell_permutation, dim);
+              const std::size_t data_per_cell
+                  = x.size() / cell_permutations.size();
+              std::span<std::complex<T>> x_span(x.data(), x.size());
+              std::span<const std::uint32_t> perm_span(
+                  cell_permutations.data(), cell_permutations.size());
+
+              for (std::size_t i = 0; i < cell_permutations.size(); i++)
+              {
+                self.Tt_inv_apply(
+                    x_span.subspan(i * data_per_cell, data_per_cell),
+                    perm_span[i], dim);
+              }
             },
-            nb::arg("x"), nb::arg("cell_permutation"), nb::arg("dim"))
+            nb::arg("x"), nb::arg("cell_permutations"), nb::arg("dim"))
         .def_prop_ro("needs_dof_transformations",
                      &dolfinx::fem::FiniteElement<T>::needs_dof_transformations)
         .def("signature", &dolfinx::fem::FiniteElement<T>::signature);
@@ -343,6 +406,8 @@ void declare_objects(nb::module_& m, const std::string& type)
           [](dolfinx::fem::Function<T, U>& self,
              dolfinx::fem::Function<T, U>& u,
              nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig> cells,
+             nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig>
+                 cell_map,
              const std::tuple<
                  nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig>,
                  nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig>,
@@ -366,9 +431,11 @@ void declare_objects(nb::module_& m, const std::string& type)
                         std::get<3>(interpolation_data).data(),
                         std::get<3>(interpolation_data).size()));
             self.interpolate(u, std::span(cells.data(), cells.size()),
+                             std::span(cell_map.data(), cell_map.size()),
                              _interpolation_data);
           },
-          nb::arg("u"), nb::arg("cells"), nb::arg("nmm_interpolation_data"),
+          nb::arg("u"), nb::arg("cells"), nb::arg("cell_map"),
+          nb::arg("nmm_interpolation_data"),
           "Interpolate a finite element function")
       .def(
           "interpolate_ptr",
@@ -405,10 +472,16 @@ void declare_objects(nb::module_& m, const std::string& type)
           "interpolate",
           [](dolfinx::fem::Function<T, U>& self,
              const dolfinx::fem::Expression<T, U>& expr,
-             nb::ndarray<const std::int32_t, nb::c_contig> cells)
-          { self.interpolate(expr, std::span(cells.data(), cells.size())); },
-          nb::arg("expr"), nb::arg("cells"),
-          "Interpolate an Expression on a set of cells")
+             nb::ndarray<const std::int32_t, nb::c_contig> cells,
+             const dolfinx::mesh::Mesh<U>& expr_mesh,
+             nb::ndarray<const std::int32_t, nb::c_contig> cell_map)
+          {
+            self.interpolate(expr, std::span(cells.data(), cells.size()),
+                             expr_mesh,
+                             std::span(cell_map.data(), cell_map.size()));
+          },
+          nb::arg("expr"), nb::arg("cells"), nb::arg("expr_mesh"),
+          nb::arg("cell_map"), "Interpolate an Expression on a set of cells")
       .def_prop_ro(
           "x", nb::overload_cast<>(&dolfinx::fem::Function<T, U>::x),
           "Return the vector associated with the finite element Function")
@@ -1108,10 +1181,9 @@ void declare_cmap(nb::module_& m, std::string type)
                                              1, std::multiplies{}));
             cmdspan4_t phi_full(phi_b.data(), phi_shape);
             self.tabulate(0, std::span(X.data(), X.size()), Xshape, phi_b);
-            auto phi = MDSPAN_IMPL_STANDARD_NAMESPACE::
-                MDSPAN_IMPL_PROPOSED_NAMESPACE::submdspan(
-                    phi_full, 0, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                    MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+            auto phi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+                phi_full, 0, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+                MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
             std::array<std::size_t, 2> shape = {X.shape(0), cell_x.shape(1)};
             std::vector<T> xb(shape[0] * shape[1]);
@@ -1162,10 +1234,9 @@ void declare_cmap(nb::module_& m, std::string type)
               cmdspan4_t phi(phi_b.data(), phi_shape);
 
               self.tabulate(1, std::vector<T>(tdim), {1, tdim}, phi_b);
-              auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::
-                  MDSPAN_IMPL_PROPOSED_NAMESPACE::submdspan(
-                      phi, std::pair(1, tdim + 1), 0,
-                      MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+              auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+                  phi, std::pair(1, tdim + 1), 0,
+                  MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
               self.compute_jacobian(dphi, g, J);
               self.compute_jacobian_inverse(J, K);
@@ -1197,16 +1268,40 @@ void declare_real_functions(nb::module_& m)
         dolfinx::fem::ElementDofLayout layout
             = dolfinx::fem::create_element_dof_layout(*p, topology.cell_type());
 
-        std::function<void(std::span<std::int32_t>, std::uint32_t)>
-            unpermute_dofs = nullptr;
+        std::function<void(std::span<std::int32_t>, std::uint32_t)> permute_inv
+            = nullptr;
         if (element.needs_dof_permutations())
-          unpermute_dofs = element.get_dof_permutation_function(true, true);
+          permute_inv = element.dof_permutation_fn(true, true);
         return dolfinx::fem::create_dofmap(comm.get(), layout, topology,
-                                           unpermute_dofs, nullptr);
+                                           permute_inv, nullptr);
       },
       nb::arg("comm"), nb::arg("dofmap"), nb::arg("topology"),
       nb::arg("element"),
       "Create DofMap object from a pointer to ufcx_dofmap.");
+
+  m.def(
+      "create_dofmaps",
+      [](const dolfinx_wrappers::MPICommWrapper comm,
+         std::vector<std::uintptr_t> ufcx_dofmaps,
+         dolfinx::mesh::Topology& topology)
+      {
+        std::vector<dolfinx::fem::ElementDofLayout> layouts;
+        int D = topology.dim();
+        assert(ufcx_dofmaps.size() == topology.entity_types(D).size());
+        for (std::size_t i = 0; i < ufcx_dofmaps.size(); ++i)
+        {
+          ufcx_dofmap* p = reinterpret_cast<ufcx_dofmap*>(ufcx_dofmaps[i]);
+          assert(p);
+          layouts.push_back(dolfinx::fem::create_element_dof_layout(
+              *p, topology.entity_types(D)[i]));
+        }
+
+        return dolfinx::fem::create_dofmaps(comm.get(), layouts, topology,
+                                            nullptr, nullptr);
+      },
+      nb::arg("comm"), nb::arg("dofmap"), nb::arg("topology"),
+      "Create DofMap objects on a mixed topology mesh from pointers to "
+      "ufcx_dofmaps.");
 
   m.def(
       "locate_dofs_topological",

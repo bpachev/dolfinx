@@ -230,8 +230,8 @@ template <typename U, typename V, typename W>
 Geometry(std::shared_ptr<const common::IndexMap>, U,
          const std::vector<fem::CoordinateElement<
              typename std::remove_reference_t<typename V::value_type>>>&,
-         V, int, W)
-    -> Geometry<typename std::remove_cvref_t<typename V::value_type>>;
+         V, int,
+         W) -> Geometry<typename std::remove_cvref_t<typename V::value_type>>;
 /// @endcond
 
 /// @brief Build Geometry from input data.
@@ -305,7 +305,7 @@ create_geometry(
     for (std::int32_t cell = 0; cell < num_cells; ++cell)
     {
       std::span dofs(dofmaps.front().data() + cell * d, d);
-      elements.front().unpermute_dofs(dofs, cell_info[cell]);
+      elements.front().permute_inv(dofs, cell_info[cell]);
     }
   }
 
@@ -343,7 +343,7 @@ create_geometry(
   std::vector<T> xg(3 * shape0, 0);
   for (std::size_t i = 0; i < shape0; ++i)
   {
-    std::copy_n(std::next(x.cbegin(), shape1 * l2l[i]), shape1,
+    std::copy_n(std::next(x.begin(), shape1 * l2l[i]), shape1,
                 std::next(xg.begin(), 3 * i));
   }
 
@@ -411,7 +411,7 @@ create_geometry(
     for (std::int32_t cell = 0; cell < num_cells; ++cell)
     {
       std::span dofs(dofmaps.front().data() + cell * d, d);
-      element.unpermute_dofs(dofs, cell_info[cell]);
+      element.permute_inv(dofs, cell_info[cell]);
     }
   }
 
@@ -486,8 +486,8 @@ create_subgeometry(const Topology& topology, const Geometry<T>& geometry,
       assert(it != cell_entities.end());
       std::size_t local_entity = std::distance(cell_entities.begin(), it);
 
-      auto xc = MDSPAN_IMPL_STANDARD_NAMESPACE::MDSPAN_IMPL_PROPOSED_NAMESPACE::
-          submdspan(xdofs, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto xc = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          xdofs, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
       for (std::int32_t entity_dof : closure_dofs[dim][local_entity])
         x_indices.push_back(xc[entity_dof]);
     }
@@ -505,8 +505,8 @@ create_subgeometry(const Topology& topology, const Geometry<T>& geometry,
   std::shared_ptr<common::IndexMap> sub_x_dof_index_map;
   std::vector<std::int32_t> subx_to_x_dofmap;
   {
-    auto [map, new_to_old]
-        = common::create_sub_index_map(*x_index_map, sub_x_dofs, true);
+    auto [map, new_to_old] = common::create_sub_index_map(
+        *x_index_map, sub_x_dofs, common::IndexMapOrder::any, true);
     sub_x_dof_index_map = std::make_shared<common::IndexMap>(std::move(map));
     subx_to_x_dofmap = std::move(new_to_old);
   }

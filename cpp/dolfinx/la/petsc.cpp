@@ -5,6 +5,8 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
+#ifdef HAS_PETSC
+
 #include "petsc.h"
 #include "SparsityPattern.h"
 #include "Vector.h"
@@ -1072,3 +1074,5 @@ void petsc::KrylovSolver::set_from_options() const
 //-----------------------------------------------------------------------------
 KSP petsc::KrylovSolver::ksp() const { return _ksp; }
 //-----------------------------------------------------------------------------
+
+#endif

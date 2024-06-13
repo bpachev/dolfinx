@@ -185,6 +185,16 @@ la::SparsityPattern create_sparsity_pattern(const Form<T, U>& a)
   const std::array bs
       = {dofmaps[0].get().index_map_bs(), dofmaps[1].get().index_map_bs()};
 
+  auto extract_cells = [](std::span<const std::int32_t> facets)
+  {
+    assert(facets.size() % 2 == 0);
+    std::vector<std::int32_t> cells;
+    cells.reserve(facets.size() / 2);
+    for (std::size_t i = 0; i < facets.size(); i += 2)
+      cells.push_back(facets[i]);
+    return cells;
+  };
+
   // Create and build sparsity pattern
   la::SparsityPattern pattern(mesh->comm(), index_maps, bs);
   for (auto type : types)
@@ -203,23 +213,19 @@ la::SparsityPattern create_sparsity_pattern(const Form<T, U>& a)
     case IntegralType::interior_facet:
       for (int id : ids)
       {
-        std::span<const std::int32_t> facets = a.domain(type, id);
-        std::vector<std::int32_t> f;
-        f.reserve(facets.size() / 2);
-        for (std::size_t i = 0; i < facets.size(); i += 4)
-          f.insert(f.end(), {facets[i], facets[i + 2]});
-        sparsitybuild::interior_facets(pattern, f, {{dofmaps[0], dofmaps[1]}});
+        sparsitybuild::interior_facets(
+            pattern,
+            {extract_cells(a.domain(type, id, *mesh0)),
+             extract_cells(a.domain(type, id, *mesh1))},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case IntegralType::exterior_facet:
       for (int id : ids)
       {
-        std::span<const std::int32_t> facets = a.domain(type, id);
-        std::vector<std::int32_t> cells;
-        cells.reserve(facets.size() / 2);
-        for (std::size_t i = 0; i < facets.size(); i += 2)
-          cells.push_back(facets[i]);
-        sparsitybuild::cells(pattern, {cells, cells},
+        sparsitybuild::cells(pattern,
+                             {extract_cells(a.domain(type, id, *mesh0)),
+                              extract_cells(a.domain(type, id, *mesh1))},
                              {{dofmaps[0], dofmaps[1]}});
       }
       break;
@@ -243,13 +249,30 @@ ElementDofLayout create_element_dof_layout(const ufcx_dofmap& dofmap,
 /// @param[in] comm MPI communicator
 /// @param[in] layout Dof layout on an element
 /// @param[in] topology Mesh topology
-/// @param[in] unpermute_dofs Function to un-permute dofs. `nullptr`
+/// @param[in] permute_inv Function to un-permute dofs. `nullptr`
 /// when transformation is not required.
 /// @param[in] reorder_fn Graph reordering function called on the dofmap
 /// @return A new dof map
 DofMap create_dofmap(
     MPI_Comm comm, const ElementDofLayout& layout, mesh::Topology& topology,
-    std::function<void(std::span<std::int32_t>, std::uint32_t)> unpermute_dofs,
+    std::function<void(std::span<std::int32_t>, std::uint32_t)> permute_inv,
+    std::function<std::vector<int>(const graph::AdjacencyList<std::int32_t>&)>
+        reorder_fn);
+
+/// @brief Create a set of dofmaps on a given topology
+/// @param[in] comm MPI communicator
+/// @param[in] layouts Dof layout on each element type
+/// @param[in] topology Mesh topology
+/// @param[in] permute_inv Function to un-permute dofs. `nullptr`
+/// when transformation is not required.
+/// @param[in] reorder_fn Graph reordering function called on the dofmaps
+/// @return The list of new dof maps
+/// @note The number of layouts must match the number of cell types in the
+/// topology
+std::vector<DofMap> create_dofmaps(
+    MPI_Comm comm, const std::vector<ElementDofLayout>& layouts,
+    mesh::Topology& topology,
+    std::function<void(std::span<std::int32_t>, std::uint32_t)> permute_inv,
     std::function<std::vector<int>(const graph::AdjacencyList<std::int32_t>&)>
         reorder_fn);
 
@@ -769,14 +792,14 @@ FunctionSpace<T> create_functionspace(
   // Create a dofmap
   ElementDofLayout layout(_e->block_size(), e.entity_dofs(),
                           e.entity_closure_dofs(), {}, sub_doflayout);
-  std::function<void(std::span<std::int32_t>, std::uint32_t)> unpermute_dofs
+  std::function<void(std::span<std::int32_t>, std::uint32_t)> permute_inv
       = nullptr;
   if (_e->needs_dof_permutations())
-    unpermute_dofs = _e->get_dof_permutation_function(true, true);
+    permute_inv = _e->dof_permutation_fn(true, true);
   assert(mesh);
   assert(mesh->topology());
   auto dofmap = std::make_shared<const DofMap>(create_dofmap(
-      mesh->comm(), layout, *mesh->topology(), unpermute_dofs, reorder_fn));
+      mesh->comm(), layout, *mesh->topology(), permute_inv, reorder_fn));
   return FunctionSpace(mesh, _e, dofmap, _value_shape);
 }
 
@@ -832,13 +855,13 @@ FunctionSpace<T> create_functionspace(
   ElementDofLayout layout
       = create_element_dof_layout(*ufcx_map, topology->cell_type());
 
-  std::function<void(std::span<std::int32_t>, std::uint32_t)> unpermute_dofs;
+  std::function<void(std::span<std::int32_t>, std::uint32_t)> permute_inv;
   if (element->needs_dof_permutations())
-    unpermute_dofs = element->get_dof_permutation_function(true, true);
+    permute_inv = element->dof_permutation_fn(true, true);
   return FunctionSpace(
       mesh, element,
       std::make_shared<DofMap>(create_dofmap(mesh->comm(), layout, *topology,
-                                             unpermute_dofs, reorder_fn)),
+                                             permute_inv, reorder_fn)),
       value_shape);
 }
 
@@ -847,24 +870,14 @@ namespace impl
 {
 /// @private
 template <dolfinx::scalar T, std::floating_point U>
-std::span<const std::uint32_t> get_cell_orientation_info(
-    const std::vector<std::shared_ptr<const Function<T, U>>>& coefficients)
+std::span<const std::uint32_t>
+get_cell_orientation_info(const Function<T, U>& coefficient)
 {
-  bool needs_dof_transformations = false;
-  for (auto coeff : coefficients)
-  {
-    auto element = coeff->function_space()->element();
-    if (element->needs_dof_transformations())
-    {
-      needs_dof_transformations = true;
-      break;
-    }
-  }
-
   std::span<const std::uint32_t> cell_info;
-  if (needs_dof_transformations)
+  auto element = coefficient.function_space()->element();
+  if (element->needs_dof_transformations())
   {
-    auto mesh = coefficients.front()->function_space()->mesh();
+    auto mesh = coefficient.function_space()->mesh();
     mesh->topology_mutable()->create_entity_permutations();
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
@@ -905,9 +918,7 @@ void pack(std::span<T> coeffs, std::int32_t cell, int bs, std::span<const T> v,
 template <typename F>
 concept FetchCells = requires(F&& f, std::span<const std::int32_t> v) {
   requires std::invocable<F, std::span<const std::int32_t>>;
-  {
-    f(v)
-  } -> std::convertible_to<std::int32_t>;
+  { f(v) } -> std::convertible_to<std::int32_t>;
 };
 
 /// @brief Pack a single coefficient for a set of active entities.
@@ -937,9 +948,11 @@ void pack_coefficient_entity(std::span<T> c, int cstride,
   auto element = u.function_space()->element();
   assert(element);
   int space_dim = element->space_dimension();
+
+  // Transformation from conforming degrees-of-freedom to reference
+  // degrees-of-freedom
   auto transformation
-      = element->template get_pre_dof_transformation_function<T>(
-          FiniteElement<U>::doftransform::transpose);
+      = element->template dof_transformation_fn<T>(doftransform::transpose);
   const int bs = dofmap.bs();
   switch (bs)
   {
@@ -1056,60 +1069,61 @@ void pack_coefficients(const Form<T, U>& form, IntegralType integral_type,
 
   if (!coefficients.empty())
   {
-    std::span<const std::uint32_t> cell_info
-        = impl::get_cell_orientation_info(coefficients);
-
     switch (integral_type)
     {
     case IntegralType::cell:
     {
-      auto fetch_cell = [](auto entity) { return entity.front(); };
-
       // Iterate over coefficients
-      std::span<const std::int32_t> cells = form.domain(IntegralType::cell, id);
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
-        impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
-                                      cell_info, cells, 1, fetch_cell,
-                                      offsets[coeff]);
+        auto mesh = coefficients[coeff]->function_space()->mesh();
+        assert(mesh);
+        std::vector<std::int32_t> cells
+            = form.domain(IntegralType::cell, id, *mesh);
+        std::span<const std::uint32_t> cell_info
+            = impl::get_cell_orientation_info(*coefficients[coeff]);
+        impl::pack_coefficient_entity(
+            c, cstride, *coefficients[coeff], cell_info, cells, 1,
+            [](auto entity) { return entity.front(); }, offsets[coeff]);
       }
       break;
     }
     case IntegralType::exterior_facet:
     {
-      // Function to fetch cell index from exterior facet entity
-      auto fetch_cell = [](auto entity) { return entity.front(); };
-
       // Iterate over coefficients
-      std::span<const std::int32_t> facets
-          = form.domain(IntegralType::exterior_facet, id);
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
-        impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
-                                      cell_info, facets, 2, fetch_cell,
-                                      offsets[coeff]);
+        auto mesh = coefficients[coeff]->function_space()->mesh();
+        std::vector<std::int32_t> facets
+            = form.domain(IntegralType::exterior_facet, id, *mesh);
+        std::span<const std::uint32_t> cell_info
+            = impl::get_cell_orientation_info(*coefficients[coeff]);
+        impl::pack_coefficient_entity(
+            c, cstride, *coefficients[coeff], cell_info, facets, 2,
+            [](auto entity) { return entity.front(); }, offsets[coeff]);
       }
       break;
     }
     case IntegralType::interior_facet:
     {
-      // Functions to fetch cell indices from interior facet entity
-      auto fetch_cell0 = [](auto entity) { return entity[0]; };
-      auto fetch_cell1 = [](auto entity) { return entity[2]; };
-
       // Iterate over coefficients
-      std::span<const std::int32_t> facets
-          = form.domain(IntegralType::interior_facet, id);
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
+        auto mesh = coefficients[coeff]->function_space()->mesh();
+        std::vector<std::int32_t> facets
+            = form.domain(IntegralType::interior_facet, id, *mesh);
+        std::span<const std::uint32_t> cell_info
+            = impl::get_cell_orientation_info(*coefficients[coeff]);
+
         // Pack coefficient ['+']
-        impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
-                                      cell_info, facets, 4, fetch_cell0,
-                                      2 * offsets[coeff]);
+        impl::pack_coefficient_entity(
+            c, 2 * cstride, *coefficients[coeff], cell_info, facets, 4,
+            [](auto entity) { return entity[0]; }, 2 * offsets[coeff]);
         // Pack coefficient ['-']
-        impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
-                                      cell_info, facets, 4, fetch_cell1,
-                                      offsets[coeff] + offsets[coeff + 1]);
+        impl::pack_coefficient_entity(
+            c, 2 * cstride, *coefficients[coeff], cell_info, facets, 4,
+            [](auto entity) { return entity[2]; },
+            offsets[coeff] + offsets[coeff + 1]);
       }
       break;
     }
@@ -1134,10 +1148,10 @@ Expression<T, U> create_expression(
                              "function space was provided.");
   }
 
-  std::vector<U> X(e.points, e.points + e.num_points * e.topological_dimension);
+  std::vector<U> X(e.points, e.points + e.num_points * e.entity_dimension);
   std::array<std::size_t, 2> Xshape
       = {static_cast<std::size_t>(e.num_points),
-         static_cast<std::size_t>(e.topological_dimension)};
+         static_cast<std::size_t>(e.entity_dimension)};
   std::vector<int> value_shape(e.value_shape, e.value_shape + e.num_components);
   std::function<void(T*, const T*, const T*,
                      const typename scalar_value_type<T>::value_type*,
@@ -1236,15 +1250,17 @@ void pack_coefficients(const Form<T, U>& form,
 }
 
 /// @brief Pack coefficients of a Expression u for a give list of active
-/// cells.
+/// entities.
 ///
 /// @param[in] e The Expression
-/// @param[in] cells A list of active cells
+/// @param[in] entities A list of active entities
+/// @param[in] estride Stride for each entity in active entities (1 for cells, 2
+/// for facets)
 /// @return A pair of the form (coeffs, cstride)
 template <dolfinx::scalar T, std::floating_point U>
 std::pair<std::vector<T>, int>
 pack_coefficients(const Expression<T, U>& e,
-                  std::span<const std::int32_t> cells)
+                  std::span<const std::int32_t> entities, std::size_t estride)
 {
   // Get form coefficient offsets and dofmaps
   const std::vector<std::shared_ptr<const Function<T, U>>>& coeffs
@@ -1253,17 +1269,17 @@ pack_coefficients(const Expression<T, U>& e,
 
   // Copy data into coefficient array
   const int cstride = offsets.back();
-  std::vector<T> c(cells.size() * offsets.back());
+  std::vector<T> c(entities.size() / estride * offsets.back());
   if (!coeffs.empty())
   {
-    std::span<const std::uint32_t> cell_info
-        = impl::get_cell_orientation_info(coeffs);
-
     // Iterate over coefficients
     for (std::size_t coeff = 0; coeff < coeffs.size(); ++coeff)
     {
+      std::span<const std::uint32_t> cell_info
+          = impl::get_cell_orientation_info(*coeffs[coeff]);
+
       impl::pack_coefficient_entity(
-          std::span(c), cstride, *coeffs[coeff], cell_info, cells, 1,
+          std::span(c), cstride, *coeffs[coeff], cell_info, entities, estride,
           [](auto entity) { return entity[0]; }, offsets[coeff]);
     }
   }

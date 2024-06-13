@@ -1,8 +1,13 @@
-// # Custom cell kernel assembly (C++)
+// ```text
+// Copyright (C) 2024 Jack S. Hale and Garth N. Wells
+// This file is part of DOLFINx (https://www.fenicsproject.org)
+// SPDX-License-Identifier:    LGPL-3.0-or-later
+// ```
+
+// # Custom cell kernel assembly
 //
-// This demo shows various methods to define custom cell kernels in C++ and
-// have them assembled into DOLFINx linear algebra data structures.
-//
+// This demo shows various methods to define custom cell kernels in C++
+// and have them assembled into DOLFINx linear algebra data structures.
 
 #include <basix/finite-element.h>
 #include <basix/mdspan.hpp>
@@ -90,7 +95,8 @@ double assemble_matrix0(std::shared_ptr<fem::FunctionSpace<T>> V, auto kernel,
   return A.squared_norm();
 }
 
-/// @brief Assemble a RHS vector using a `std::function` kernel function.
+/// @brief Assemble a RHS vector using a `std::function` kernel
+/// function.
 /// @tparam T Scalar type.
 /// @param V Function space.
 /// @param kernel Element kernel to execute.
@@ -160,9 +166,9 @@ double assemble_vector1(const mesh::Geometry<T>& g, const fem::DofMap& dofmap,
 {
   la::Vector<T> b(dofmap.index_map, 1);
   common::Timer timer("Assembler1 lambda (vector)");
-  fem::impl::assemble_cells<T, 1>([](auto, auto, auto, auto) {},
-                                  b.mutable_array(), g.dofmap(), g.x(), cells,
-                                  dofmap.map(), 1, kernel, {}, {}, 0, {});
+  fem::impl::assemble_cells<T, 1>(
+      [](auto, auto, auto, auto) {}, b.mutable_array(), g.dofmap(), g.x(),
+      cells, {dofmap.map(), 1, cells}, kernel, {}, {}, 0, {});
   b.scatter_rev(std::plus<T>());
   return la::squared_norm(b);
 }

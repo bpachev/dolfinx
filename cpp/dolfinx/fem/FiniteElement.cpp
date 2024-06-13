@@ -125,7 +125,8 @@ FiniteElement<T>::FiniteElement(const ufcx_finite_element& e)
     : _signature(e.signature), _space_dim(e.space_dimension),
       _reference_value_shape(e.reference_value_shape,
                              e.reference_value_shape + e.reference_value_rank),
-      _bs(e.block_size), _is_mixed(e.element_type == ufcx_mixed_element)
+      _bs(e.block_size), _is_mixed(e.element_type == ufcx_mixed_element),
+      _symmetric(e.symmetric)
 {
   const ufcx_shape _shape = e.cell_shape;
   switch (_shape)
@@ -293,9 +294,10 @@ FiniteElement<T>::FiniteElement(const ufcx_finite_element& e)
 //-----------------------------------------------------------------------------
 template <std::floating_point T>
 FiniteElement<T>::FiniteElement(const basix::FiniteElement<T>& element,
-                                const std::size_t block_size)
+                                const std::size_t block_size,
+                                const bool symmetric)
     : _reference_value_shape(element.value_shape()), _bs(block_size),
-      _is_mixed(false)
+      _is_mixed(false), _symmetric(symmetric)
 {
   _space_dim = _bs * element.dim();
 
@@ -374,6 +376,12 @@ template <std::floating_point T>
 std::span<const std::size_t> FiniteElement<T>::reference_value_shape() const
 {
   return _reference_value_shape;
+}
+//-----------------------------------------------------------------------------
+template <std::floating_point T>
+bool FiniteElement<T>::symmetric() const
+{
+  return _symmetric;
 }
 //-----------------------------------------------------------------------------
 template <std::floating_point T>
@@ -566,24 +574,23 @@ bool FiniteElement<T>::needs_dof_permutations() const noexcept
 }
 //-----------------------------------------------------------------------------
 template <std::floating_point T>
-void FiniteElement<T>::permute_dofs(std::span<std::int32_t> doflist,
-                                    std::uint32_t cell_permutation) const
+void FiniteElement<T>::permute(std::span<std::int32_t> doflist,
+                               std::uint32_t cell_permutation) const
 {
-  _element->permute_dofs(doflist, cell_permutation);
+  _element->permute(doflist, cell_permutation);
 }
 //-----------------------------------------------------------------------------
 template <std::floating_point T>
-void FiniteElement<T>::unpermute_dofs(std::span<std::int32_t> doflist,
-                                      std::uint32_t cell_permutation) const
+void FiniteElement<T>::permute_inv(std::span<std::int32_t> doflist,
+                                   std::uint32_t cell_permutation) const
 {
-  _element->unpermute_dofs(doflist, cell_permutation);
+  _element->permute_inv(doflist, cell_permutation);
 }
 //-----------------------------------------------------------------------------
 /// @cond
 template <std::floating_point T>
 std::function<void(std::span<std::int32_t>, std::uint32_t)>
-FiniteElement<T>::get_dof_permutation_function(bool inverse,
-                                               bool scalar_element) const
+FiniteElement<T>::dof_permutation_fn(bool inverse, bool scalar_element) const
 /// @endcond
 {
   if (!needs_dof_permutations())
@@ -600,7 +607,7 @@ FiniteElement<T>::get_dof_permutation_function(bool inverse,
       for (std::size_t i = 0; i < _sub_elements.size(); ++i)
       {
         sub_element_functions.push_back(
-            _sub_elements[i]->get_dof_permutation_function(inverse));
+            _sub_elements[i]->dof_permutation_fn(inverse));
         dims.push_back(_sub_elements[i]->space_dimension());
       }
 
@@ -618,10 +625,9 @@ FiniteElement<T>::get_dof_permutation_function(bool inverse,
     }
     else if (!scalar_element)
     {
-      // Vector element
+      // Blocked element
       std::function<void(std::span<std::int32_t>, std::uint32_t)>
-          sub_element_function
-          = _sub_elements[0]->get_dof_permutation_function(inverse);
+          sub_element_function = _sub_elements[0]->dof_permutation_fn(inverse);
       int dim = _sub_elements[0]->space_dimension();
       int bs = _bs;
       return
@@ -645,13 +651,13 @@ FiniteElement<T>::get_dof_permutation_function(bool inverse,
   {
     return
         [this](std::span<std::int32_t> doflist, std::uint32_t cell_permutation)
-    { unpermute_dofs(doflist, cell_permutation); };
+    { permute_inv(doflist, cell_permutation); };
   }
   else
   {
     return
         [this](std::span<std::int32_t> doflist, std::uint32_t cell_permutation)
-    { permute_dofs(doflist, cell_permutation); };
+    { permute(doflist, cell_permutation); };
   }
 }
 //-----------------------------------------------------------------------------
