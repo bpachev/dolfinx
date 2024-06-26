@@ -13,9 +13,6 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/Vector.h>
 #include <dolfinx/la/utils.h>
-#ifdef HAS_CUDA_TOOLKIT
-#include <dolfinx/la/CUDAVector.h>
-#endif
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
