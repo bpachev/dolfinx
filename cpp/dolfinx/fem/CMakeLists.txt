@@ -1,13 +1,6 @@
 set(HEADERS_fem
     ${CMAKE_CURRENT_SOURCE_DIR}/Constant.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CoordinateElement.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAAssembler.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDADirichletBC.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDADofMap.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAForm.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAFormConstants.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAFormCoefficients.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/CUDAFormIntegral.h
     ${CMAKE_CURRENT_SOURCE_DIR}/DirichletBC.h
     ${CMAKE_CURRENT_SOURCE_DIR}/DofMap.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ElementDofLayout.h
@@ -33,13 +26,7 @@ set(HEADERS_fem
 
 target_sources(
   dolfinx
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/CUDAAssembler.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/CUDADirichletBC.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/CUDADofMap.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/CUDAFormConstants.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/CUDAFormCoefficients.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/CUDAFormIntegral.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/DirichletBC.cpp
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/DirichletBC.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/CoordinateElement.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/DofMap.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/ElementDofLayout.cpp

@@ -19,7 +19,6 @@
 #include <type_traits>
 #include <vector>
 #ifdef HAS_CUDA_TOOLKIT
-#include <dolfinx/common/CUDA.h>
 #include "cuda.h"
 #endif
 
@@ -220,16 +219,29 @@ public:
 #ifdef HAS_CUDA_TOOLKIT
 
   /// Copy to device, allocating GPU memory if required
-  void to_device(const CUDA::Context& cuda_context)
+  void to_device()
   {
+    const char * cuda_err_description;
+    CUresult cuda_err;
     const std::int32_t local_size = _bs * _map->size_local();
     size_t dvalues_size = local_size * sizeof(value_type);
     if (!_dvalues) {
-      // Allocate device-side values
-      CUDA::safeMemAlloc(&_dvalues, dvalues_size);
+      cuda_err = cuMemAlloc(&_dvalues, dvalues_size);
+      if (cuda_err != CUDA_SUCCESS) {
+        cuGetErrorString(cuda_err, &cuda_err_description);
+        throw std::runtime_error(
+          "cuMemAlloc() failed with " + std::string(cuda_err_description) +
+          " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+      }
     }
     value_type* values = _x.data();
-    CUDA::safeMemcpyHtoD(_dvalues, values, dvalues_size);
+    cuda_err = cuMemcpyHtoD(_dvalues, values, dvalues_size);
+    if (cuda_err != CUDA_SUCCESS) {
+      cuGetErrorString(cuda_err, &cuda_err_description);
+      throw std::runtime_error(
+        "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
+        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+    }
   }
 
   /// Get pointer to vector data on device

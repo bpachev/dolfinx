@@ -18,10 +18,10 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/Topology.h>
-#if defined(HAS_CUDA_TOOLKIT)
+/*#if defined(HAS_CUDA_TOOLKIT)
 #include <dolfinx/common/CUDA.h>
 #include <dolfinx/fem/CUDADofMap.h>
-#endif
+#endif*/
 
 #include <map>
 #include <memory>
@@ -339,7 +339,7 @@ public:
   /// The dofmap
   std::shared_ptr<const DofMap> dofmap() const { return _dofmap; }
 
-#if defined(HAS_CUDA_TOOLKIT)
+/*#if defined(HAS_CUDA_TOOLKIT)
   /// Create a device-side dofmap
   /// @param[in] cuda_context A context for a CUDA device
   void create_cuda_dofmap(const CUDA::Context& cuda_context)
@@ -355,7 +355,7 @@ public:
   {
     return _cuda_dofmap;
   }
-#endif
+#endif*/
 
   /// The shape of the value space
   std::span<const std::size_t> value_shape() const noexcept
@@ -384,10 +384,10 @@ private:
   // The dofmap
   std::shared_ptr<const DofMap> _dofmap;
 
-#if defined(HAS_CUDA_TOOLKIT)
+/*#if defined(HAS_CUDA_TOOLKIT)
   // Device-side dofmap
   std::shared_ptr<const fem::CUDADofMap> _cuda_dofmap;
-#endif
+#endif*/
 
   // The component w.r.t. to root space
   std::vector<int> _component;
