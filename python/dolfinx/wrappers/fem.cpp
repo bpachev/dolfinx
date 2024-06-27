@@ -28,25 +28,6 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/MeshTags.h>
-#ifdef HAS_CUDA_TOOLKIT
-#include <dolfinx/common/CUDA.h>
-#include <dolfinx/fem/CUDAAssembler.h>
-#include <dolfinx/fem/CUDADirichletBC.h>
-#include <dolfinx/fem/CUDADofMap.h>
-#include <dolfinx/fem/CUDAForm.h>
-#include <dolfinx/fem/CUDAFormIntegral.h>
-#include <dolfinx/fem/CUDAFormConstants.h>
-#include <dolfinx/fem/CUDAFormCoefficients.h>
-#include <dolfinx/la/CUDAMatrix.h>
-#include <dolfinx/la/CUDAVector.h>
-#include <dolfinx/mesh/CUDAMesh.h>
-//#include <petscmat.h>
-//#include <petscvec.h>
-#include "caster_petsc.h"
-#include <petsc4py/petsc4py.h>
-#include <petscis.h>
-#include <cuda.h>
-#endif
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
