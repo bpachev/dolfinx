@@ -18,9 +18,6 @@
 #include <span>
 #include <type_traits>
 #include <vector>
-#ifdef HAS_CUDA_TOOLKIT
-#include "cuda.h"
-#endif
 
 namespace dolfinx::la
 {
@@ -53,9 +50,6 @@ public:
         _bs(bs), _buffer_local(_scatterer->local_buffer_size()),
         _buffer_remote(_scatterer->remote_buffer_size()),
         _x(bs * (map->size_local() + map->num_ghosts()))
-#ifdef HAS_CUDA_TOOLKIT
-        ,_dvalues(0)
-#endif
   {
   }
 
@@ -64,9 +58,6 @@ public:
       : _map(x._map), _scatterer(x._scatterer), _bs(x._bs),
         _request(1, MPI_REQUEST_NULL), _buffer_local(x._buffer_local),
         _buffer_remote(x._buffer_remote), _x(x._x)
-#ifdef HAS_CUDA_TOOLKIT
-        ,_dvalues(0)
-#endif
   {
   }
 
@@ -77,9 +68,6 @@ public:
         _request(std::exchange(x._request, {MPI_REQUEST_NULL})),
         _buffer_local(std::move(x._buffer_local)),
         _buffer_remote(std::move(x._buffer_remote)), _x(std::move(x._x))
-#ifdef HAS_CUDA_TOOLKIT
-        ,_dvalues(x._dvalues)
-#endif
   {
   }
 
@@ -92,11 +80,6 @@ public:
   // Destructor
   ~Vector()
   {
-#ifdef HAS_CUDA_TOOLKIT
-    if (_dvalues) {
-      cuMemFree(_dvalues);
-    }
-#endif    
   }
 
   /// Set all entries (including ghosts)
@@ -216,44 +199,6 @@ public:
 
   /// Get local part of the vector
   std::span<value_type> mutable_array() { return std::span(_x); }
-#ifdef HAS_CUDA_TOOLKIT
-
-  /// Copy to device, allocating GPU memory if required
-  void to_device()
-  {
-    const char * cuda_err_description;
-    CUresult cuda_err;
-    const std::int32_t local_size = _bs * _map->size_local();
-    size_t dvalues_size = local_size * sizeof(value_type);
-    if (!_dvalues) {
-      cuda_err = cuMemAlloc(&_dvalues, dvalues_size);
-      if (cuda_err != CUDA_SUCCESS) {
-        cuGetErrorString(cuda_err, &cuda_err_description);
-        throw std::runtime_error(
-          "cuMemAlloc() failed with " + std::string(cuda_err_description) +
-          " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-      }
-    }
-    value_type* values = _x.data();
-    cuda_err = cuMemcpyHtoD(_dvalues, values, dvalues_size);
-    if (cuda_err != CUDA_SUCCESS) {
-      cuGetErrorString(cuda_err, &cuda_err_description);
-      throw std::runtime_error(
-        "cuMemcpyHtoD() failed with " + std::string(cuda_err_description) +
-        " at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
-    }
-  }
-
-  /// Get pointer to vector data on device
-  CUdeviceptr device_values() const
-  {
-    if (!_dvalues) {
-      throw std::runtime_error("Must call to_device() before accessing device values for Vector!");
-    }
-    return _dvalues;
-  }  
-#endif
-
 private:
   // Map describing the data layout
   std::shared_ptr<const common::IndexMap> _map;
@@ -272,11 +217,6 @@ private:
 
   // Vector data
   container_type _x;
-
-#ifdef HAS_CUDA_TOOLKIT
-  // pointer to device values
-  mutable CUdeviceptr _dvalues;
-#endif
 };
 
 /// Compute the inner product of two vectors. The two vectors must have

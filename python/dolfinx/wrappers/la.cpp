@@ -59,9 +59,6 @@ void declare_objects(nb::module_& m, const std::string& type)
           },
           nb::rv_policy::reference_internal)
       .def("scatter_forward", &dolfinx::la::Vector<T>::scatter_fwd)
-#ifdef HAS_CUDA_TOOLKIT
-      .def("to_device", &dolfinx::la::Vector<T>::to_device)
-#endif
       .def(
           "scatter_reverse",
           [](dolfinx::la::Vector<T>& self, PyInsertMode mode)

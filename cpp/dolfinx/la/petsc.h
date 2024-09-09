@@ -110,9 +110,6 @@ Vec create_vector_cuda_wrap(const la::Vector<V>& x)
   assert(x.index_map());
   return create_vector_cuda_wrap(*x.index_map(), x.bs(), x.array());
 }
-
-/// Given a PETSc Vec, dump the device values
-void dump_device_vector(Vec v);
 #endif
 
 /// @todo This function could take just the local sizes
@@ -147,14 +144,6 @@ void scatter_local_vectors(
 Mat create_matrix(MPI_Comm comm, const SparsityPattern& sp,
                   std::string type = std::string());
 
-
-/// Create a PETSc Mat with immutable sparsity pattern. Caller is responsible for destroying the
-/// returned object.
-Mat create_matrix_with_fixed_pattern(MPI_Comm comm, const SparsityPattern& sp);
-
-#ifdef HAS_CUDA_TOOLKIT
-Mat create_cuda_matrix(MPI_Comm comm, const SparsityPattern& sp);
-#endif
 /// Create PETSc MatNullSpace. Caller is responsible for destruction
 /// returned object.
 /// @param [in] comm The MPI communicator
