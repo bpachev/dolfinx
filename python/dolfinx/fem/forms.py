@@ -41,6 +41,7 @@ class Form:
         ],
         ufcx_form=None,
         code: typing.Optional[str] = None,
+        module=None,
     ):
         """A finite element form
 
@@ -54,10 +55,12 @@ class Form:
             form: Compiled form object.
             ufcx_form: UFCx form
             code: Form C++ code
+            module: CFFI module
         """
         self._code = code
         self._ufcx_form = ufcx_form
         self._cpp_object = form
+        self._module = module
 
     @property
     def ufcx_form(self):
@@ -93,6 +96,10 @@ class Form:
         """Integral types in the form"""
         return self._cpp_object.integral_types
 
+    @property
+    def module(self):
+        """CFFI Module"""
+        return self._module
 
 def form_cpp_class(
     dtype: npt.DTypeLike,
@@ -235,7 +242,7 @@ def form(
             entity_maps,
             mesh,
         )
-        return Form(f, ufcx_form, code)
+        return Form(f, ufcx_form, code, module)
 
     def _create_form(form):
         """Recursively convert ufl.Forms to dolfinx.fem.Form, otherwise

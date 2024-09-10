@@ -638,20 +638,9 @@ void declare_form(nb::module_& m, std::string type)
                 _entity_maps;
             for (auto& [msh, map] : entity_maps)
               _entity_maps.emplace(msh, std::span(map.data(), map.size()));
-#ifdef HAS_CUDA_TOOLKIT
-            std::map<dolfinx::fem::IntegralType,
-                      std::vector<std::tuple<
-                          int,
-                          std::function<void(int*, const char***, const char***,
-                                             const char**, const char**)>>>> _cuda_integrals;
-	    new (fp) dolfinx::fem::Form<T, U>(
-                spaces, std::move(_integrals), _cuda_integrals, coefficients, constants,
-                needs_permutation_data, _entity_maps, mesh);
-#else
 	    new (fp) dolfinx::fem::Form<T, U>(
                 spaces, std::move(_integrals), coefficients, constants,
                 needs_permutation_data, _entity_maps, mesh);
-#endif
           },
           nb::arg("spaces"), nb::arg("integrals"), nb::arg("coefficients"),
           nb::arg("constants"), nb::arg("need_permutation_data"),

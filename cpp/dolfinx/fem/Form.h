@@ -156,13 +156,6 @@ public:
                  std::map<IntegralType, std::vector<integral_data<T, U>>>>
   Form(const std::vector<std::shared_ptr<const FunctionSpace<U>>>& V,
        X&& integrals,
-#ifdef HAS_CUDA_TOOLKIT
-       const std::map<IntegralType,
-                      std::vector<std::tuple<
-                          int,
-                          std::function<void(int*, const char***, const char***,
-                                             const char**, const char**)>>>>& cuda_integrals,
-#endif
        const std::vector<std::shared_ptr<const Function<scalar_type, U>>>&
            coefficients,
        const std::vector<std::shared_ptr<const Constant<scalar_type>>>&
@@ -208,14 +201,6 @@ public:
     for (auto [msh, map] : entity_maps)
       _entity_maps.insert({msh, std::vector(map.begin(), map.end())});
 
-#ifdef HAS_CUDA_TOOLKIT
-    for (auto& [type, kernels] : cuda_integrals)
-    {
-      auto& integrals = _cuda_integrals[static_cast<std::size_t>(type)];
-      for (auto& [id, kern] : kernels)
-        integrals.insert({id, kern});
-    }
-#endif
   }
 
   /// Copy constructor
@@ -264,23 +249,6 @@ public:
     else
       throw std::runtime_error("No kernel for requested domain index.");
   }
-
-#ifdef HAS_CUDA_TOOLKIT
-  /// @brief Get the CUDA kernels for integral i on given domain type
-  /// @param[in] type Integral type
-  /// @param[in] i Domain index
-  /// @return Function to call to get tabluate_tensor source code
-  std::function<void(int*, const char***, const char***,
-                     const char**, const char**)>
-  cuda_kernel(IntegralType type, int i) const
-  {
-    auto integrals = _cuda_integrals[static_cast<std::size_t>(type)];
-    if (auto it = integrals.find(i); it != integrals.end())
-      return it->second;
-    else
-      throw std::runtime_error("No kernel for requested domain index.");
-  }
-#endif
 
   /// @brief Get types of integrals in the form.
   /// @return Integrals types.
@@ -458,12 +426,5 @@ private:
   // Entity maps (see Form documentation)
   std::map<std::shared_ptr<const mesh::Mesh<U>>, std::vector<std::int32_t>>
       _entity_maps;
-
-#ifdef HAS_CUDA_TOOLKIT
-  using cuda_kern = std::function<void(int*, const char***, const char***,
-                                       const char**, const char**)>;
-  // CUDA integrals
-  std::array<std::map<int, cuda_kern>, 4> _cuda_integrals;
-#endif
 }; // namespace dolfinx::fem
 } // namespace dolfinx::fem
